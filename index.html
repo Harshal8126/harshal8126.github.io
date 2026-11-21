@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera pulse test</title>
+<style>
+:root{
+  --bg:#EDF1F2; --surface:#FFFFFF; --ink:#13242B; --muted:#586C75; --line:#C9D5D9;
+  --pulse:#C8283F; --accent:#0E6F7C; --ok:#1E7B4A; --warn:#9A5A08; --bad:#B3261E;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    --bg:#0F1A1F; --surface:#17262D; --ink:#E6EEF1; --muted:#9AB0B8; --line:#2B3F48;
+    --pulse:#FF6B7F; --accent:#4CC3D1; --ok:#58C98A; --warn:#E8A84A; --bad:#FF8A80;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+main{max-width:520px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.4rem;margin:0 0 4px;font-weight:650}
+p.lead{margin:0 0 16px;color:var(--muted);font-size:.95rem}
+.row{display:flex;gap:10px;margin-bottom:12px}
+.row label{flex:1;font-size:.85rem;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+select{font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:14px 18px;cursor:pointer}
+button:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#go{width:100%;background:var(--accent);color:#fff}
+#go.stop{background:var(--pulse)}
+@media (prefers-color-scheme: dark){ #go{color:#06242A} #go.stop{color:#2A0A10} }
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:14px}
+canvas#wave{width:100%;height:130px;display:block}
+#status{margin:10px 0 0;font-size:.92rem;min-height:2.6em}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;width:0;background:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px}
+.stat b{display:block;font-size:1.6rem;font-variant-numeric:tabular-nums}
+.stat span{font-size:.8rem;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:6px}
+th,td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+th{color:var(--muted);font-weight:600}
+h2{font-size:1rem;margin:0}
+.small{font-size:.82rem;color:var(--muted)}
+#exp{margin-top:10px;background:transparent;color:var(--accent);border:1px solid var(--accent);padding:10px 14px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Camera pulse test</h1>
+  <p class="lead">Measures heart rate and heart rate variability from the rear camera. Use it to compare body sites and before/after readings.</p>
+
+  <div class="row">
+    <label>Body site
+      <select id="site">
+        <option>Fingertip</option>
+        <option>Temple</option>
+        <option>Forehead</option>
+        <option>Other</option>
+      </select>
+    </label>
+    <label>Moment
+      <select id="moment">
+        <option>Baseline</option>
+        <option>Before audio</option>
+        <option>After audio</option>
+        <option>Other</option>
+      </select>
+    </label>
+  </div>
+
+  <button id="go">Start 60-second test</button>
+  <div class="bar"><i id="prog"></i></div>
+  <p id="status">Cover the rear camera and flash with your fingertip, press lightly, and keep still.</p>
+
+  <div class="panel"><canvas id="wave"></canvas></div>
+
+  <div class="stats">
+    <div class="stat"><b id="hr">--</b><span>beats per min</span></div>
+    <div class="stat"><b id="hrv">--</b><span>HRV (RMSSD, ms)</span></div>
+    <div class="stat"><b id="sig">--</b><span>signal quality</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>Sessions</h2>
+    <table id="log"><thead><tr><th>Site</th><th>Moment</th><th>BPM</th><th>RMSSD</th><th>Quality</th></tr></thead><tbody></tbody></table>
+    <p class="small" id="empty">No sessions yet. HRV is only calculated after a full test.</p>
+    <button id="exp" hidden>Download CSV</button>
+  </div>
+
+  <p class="small">Research tool, not a medical device. HRV from a phone camera depends on frame rate and movement, so compare readings from the same person with the same method.</p>
+</main>
+
+<script>
+//DSP-START
+const FS = 30; // analysis sample rate (Hz)
+
+function movAvg(x, w){
+  const n = x.length, out = new Float64Array(n), h = Math.floor(w/2);
+  const pre = new Float64Array(n+1);
+  for(let i=0;i<n;i++) pre[i+1] = pre[i] + x[i];
+  for(let i=0;i<n;i++){
+    const a = Math.max(0, i-h), b = Math.min(n, i+h+1);
+    out[i] = (pre[b]-pre[a])/(b-a);
+  }
+  return out;
+}
+function mean(a){ let s=0; for(const v of a) s+=v; return a.length? s/a.length : NaN; }
+function sd(a){ const m=mean(a); let s=0; for(const v of a) s+=(v-m)*(v-m); return a.length>1? Math.sqrt(s/(a.length-1)) : NaN; }
+function median(a){ const b=[...a].sort((p,q)=>p-q), n=b.length; return n? (n%2? b[(n-1)/2] : (b[n/2-1]+b[n/2])/2) : NaN; }
+
+// seg: [{t (ms), v (red channel mean)}] in time order
+function analyze(seg){
+  if(seg.length < FS*4) return null;
+  const t0 = seg[0].t, tEnd = seg[seg.length-1].t;
+  const n = Math.floor((tEnd - t0)/1000*FS);
+  if(n < FS*4) return null;
+  const x = new Float64Array(n);
+  let j = 0;
+  for(let i=0;i<n;i++){
+    const t = t0 + i*1000/FS;
+    while(j < seg.length-2 && seg[j+1].t < t) j++;
+    const a = seg[j], b = seg[j+1];
+    const f = Math.max(0, Math.min(1, (t - a.t)/((b.t - a.t) || 1)));
+    x[i] = a.v + (b.v - a.v)*f;
+  }
+  // band-pass: remove slow drift (1 s window), smooth fast noise (~0.13 s)
+  const base = movAvg(x, FS+1);
+  const hp = new Float64Array(n);
+  for(let i=0;i<n;i++) hp[i] = x[i] - base[i];
+  const lp = movAvg(hp, 5);
+  // blood absorbs light, so the red value dips at each pulse: invert
+  const s = new Float64Array(n);
+  for(let i=0;i<n;i++) s[i] = -lp[i];
+
+  const sdS = sd(s);
+  const meanX = mean(x);
+  const pi = meanX > 0 ? (sd(lp)/meanX)*100 : 0;
+
+  // peak detection with parabolic refinement
+  const peaks = [];
+  const minDist = Math.round(0.33*FS);
+  const edge = FS; // ignore first/last second (filter edge effects)
+  for(let i=edge;i<n-edge;i++){
+    if(s[i] > s[i-1] && s[i] >= s[i+1] && s[i] > 0.25*sdS){
+      const denom = s[i-1] - 2*s[i] + s[i+1];
+      const d = denom !== 0 ? 0.5*(s[i-1]-s[i+1])/denom : 0;
+      const idx = i + d;
+      if(peaks.length && (idx - peaks[peaks.length-1]) < minDist){
+        const li = Math.round(peaks[peaks.length-1]);
+        if(s[i] > s[li]) peaks[peaks.length-1] = idx;
+      } else peaks.push(idx);
+    }
+  }
+
+  // inter-beat intervals with artifact rejection
+  const ibi = [];
+  for(let k=1;k<peaks.length;k++) ibi.push((peaks[k]-peaks[k-1])/FS);
+  const plausible = ibi.filter(v => v>=0.33 && v<=1.5);
+  const med = median(plausible);
+  const ok = ibi.map(v => v>=0.33 && v<=1.5 && Math.abs(v-med) <= 0.3*med);
+  const good = ibi.filter((v,k)=>ok[k]);
+
+  let hr = good.length ? 60/mean(good) : NaN;
+  let rmssd = NaN, sdnn = NaN;
+  const diffs = [];
+  for(let k=1;k<ibi.length;k++) if(ok[k] && ok[k-1]) diffs.push(ibi[k]-ibi[k-1]);
+  if(diffs.length >= 10) rmssd = Math.sqrt(mean(diffs.map(d=>d*d)))*1000;
+  if(good.length >= 10) sdnn = sd(good)*1000;
+
+  const frac = ibi.length ? good.length/ibi.length : 0;
+  const quality = good.length < 5 ? 0 : frac;
+  return { s, peaks, hr, rmssd, sdnn, pi, quality, beats: good.length, seconds: n/FS };
+}
+function qualityLabel(q){ return q >= 0.85 ? 'Good' : q >= 0.65 ? 'Fair' : 'Poor'; }
+//DSP-END
+
+const $ = id => document.getElementById(id);
+const DURATION = 60, SETTLE = 5;
+let stream = null, track = null, video = null, running = false, startT = 0, tick = null;
+let samples = [], lastVT = -1;
+const probe = document.createElement('canvas'); probe.width = 16; probe.height = 16;
+const pctx = probe.getContext('2d', { willReadFrequently: true });
+const wave = $('wave'), wctx = wave.getContext('2d');
+const sessions = [];
+
+function sizeCanvas(){
+  const r = wave.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  wave.width = r.width*d; wave.height = r.height*d; wctx.setTransform(d,0,0,d,0,0);
+}
+addEventListener('resize', ()=>{ sizeCanvas(); drawWave(null); });
+sizeCanvas(); drawWave(null);
+
+function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+function drawWave(res){
+  const w = wave.clientWidth, h = wave.clientHeight;
+  wctx.clearRect(0,0,w,h);
+  wctx.strokeStyle = css('--line'); wctx.lineWidth = 1;
+  wctx.beginPath(); wctx.moveTo(0,h/2); wctx.lineTo(w,h/2); wctx.stroke();
+  if(!res) return;
+  const show = Math.min(res.s.length, 8*FS), off = res.s.length - show;
+  let m = 1e-6;
+  for(let i=0;i<show;i++) m = Math.max(m, Math.abs(res.s[off+i]));
+  wctx.strokeStyle = css('--accent'); wctx.lineWidth = 2; wctx.beginPath();
+  for(let i=0;i<show;i++){
+    const X = i/(show-1)*w, Y = h/2 - (res.s[off+i]/m)*(h/2-8);
+    i ? wctx.lineTo(X,Y) : wctx.moveTo(X,Y);
+  }
+  wctx.stroke();
+  wctx.fillStyle = css('--pulse');
+  for(const p of res.peaks){
+    if(p < off) continue;
+    const i = p - off, X = i/(show-1)*w;
+    const v = res.s[Math.round(p)];
+    wctx.beginPath(); wctx.arc(X, h/2 - (v/m)*(h/2-8), 4, 0, 6.283); wctx.fill();
+  }
+}
+
+function setStatus(msg, cls){ const s = $('status'); s.textContent = msg; s.style.color = cls ? css(cls) : css('--ink'); }
+
+async function start(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    setStatus('Camera access is not available here. Open this file in Chrome over https or localhost.', '--bad'); return;
+  }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30 } },
+      audio: false
+    });
+  }catch(e){
+    setStatus('Camera blocked. Allow camera access, and open the page in Chrome (https) if it is embedded in another app.', '--bad'); return;
+  }
+  track = stream.getVideoTracks()[0];
+  let torch = false;
+  try{
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if(caps.torch){ await track.applyConstraints({ advanced: [{ torch: true }] }); torch = true; }
+  }catch(e){}
+  video = document.createElement('video');
+  video.setAttribute('playsinline',''); video.muted = true; video.srcObject = stream;
+  await video.play();
+  samples = []; lastVT = -1; running = true; startT = performance.now();
+  $('go').textContent = 'Stop'; $('go').classList.add('stop');
+  ['hr','hrv','sig'].forEach(i => $(i).textContent = '--');
+  if(!torch) setStatus('Flash could not be turned on from the browser. Use a bright light, or on iPhone use a native app.', '--warn');
+  pump();
+  tick = setInterval(update, 250);
+}
+
+function pump(){
+  const cb = (now) => {
+    if(!running) return;
+    if(!('requestVideoFrameCallback' in video) && video.currentTime === lastVT){ next(); return; }
+    lastVT = video.currentTime;
+    pctx.drawImage(video, 0, 0, 16, 16);
+    const d = pctx.getImageData(0,0,16,16).data; let r=0,g=0,b=0; const n = d.length/4;
+    for(let i=0;i<d.length;i+=4){ r+=d[i]; g+=d[i+1]; b+=d[i+2]; }
+    samples.push({ t: now, v: r/n, r: r/n, g: g/n, b: b/n });
+    next();
+  };
+  const next = () => ('requestVideoFrameCallback' in video) ? video.requestVideoFrameCallback(cb) : requestAnimationFrame(cb);
+  next();
+}
+
+function contactMessage(){
+  const last = samples.slice(-10); if(last.length < 5) return null;
+  const r = mean(last.map(s=>s.r)), g = mean(last.map(s=>s.g));
+  if(r >= 252) return 'Image is saturated. Press more lightly or reduce pressure on the lens.';
+  if(r < 40) return 'Too dark. Cover the camera and flash, or add light.';
+  if($('site').value === 'Fingertip' && !(r > 90 && r > 1.4*g)) return 'No finger detected. Cover the camera and flash fully.';
+  return null;
+}
+
+function update(){
+  if(!running) return;
+  const el = (performance.now() - startT)/1000;
+  $('prog').style.width = Math.min(100, el/DURATION*100) + '%';
+  const warn = contactMessage();
+  const recent = samples.filter(s => s.t >= performance.now() - 12000);
+  const res = analyze(recent);
+  drawWave(res);
+  if(res && isFinite(res.hr)){ $('hr').textContent = Math.round(res.hr); }
+  if(res){ $('sig').textContent = qualityLabel(res.quality); }
+  if(warn) setStatus(warn, '--warn');
+  else if(el < SETTLE) setStatus('Settling. Keep still.', null);
+  else setStatus('Measuring: ' + Math.max(0, Math.ceil(DURATION - el)) + ' s left. Keep still and breathe normally.', null);
+  if(el >= DURATION) finish(true);
+}
+
+function cleanup(){
+  running = false; clearInterval(tick);
+  try{ track && track.applyConstraints({ advanced: [{ torch: false }] }); }catch(e){}
+  stream && stream.getTracks().forEach(t => t.stop());
+  $('go').textContent = 'Start 60-second test'; $('go').classList.remove('stop');
+}
+
+function finish(complete){
+  const startMs = samples.length ? samples[0].t + SETTLE*1000 : 0;
+  const seg = samples.filter(s => s.t >= startMs);
+  const secs = seg.length ? (seg[seg.length-1].t - seg[0].t)/1000 : 0;
+  const fps = secs ? seg.length/secs : 0;
+  cleanup();
+  $('prog').style.width = complete ? '100%' : '0%';
+  if(secs < 20){ setStatus('Stopped too early. At least 25 seconds are needed.', '--warn'); return; }
+  const res = analyze(seg);
+  if(!res || !isFinite(res.hr)){ setStatus('Could not find a clear pulse. Retry with lighter pressure and keep still.', '--bad'); return; }
+  drawWave(res);
+  $('hr').textContent = Math.round(res.hr);
+  $('hrv').textContent = isFinite(res.rmssd) ? Math.round(res.rmssd) : '--';
+  $('sig').textContent = qualityLabel(res.quality);
+  const row = { site: $('site').value, moment: $('moment').value, time: new Date().toLocaleTimeString(),
+    bpm: Math.round(res.hr), rmssd: isFinite(res.rmssd) ? Math.round(res.rmssd) : '', sdnn: isFinite(res.sdnn) ? Math.round(res.sdnn) : '',
+    quality: qualityLabel(res.quality), pi: res.pi.toFixed(2), beats: res.beats, fps: fps.toFixed(1), seconds: Math.round(secs) };
+  sessions.push(row); renderLog();
+  setStatus(res.quality < 0.65 ? 'Done, but the signal was poor. Treat these numbers with caution.' :
+    'Done. Measured at about ' + fps.toFixed(0) + ' frames per second.', res.quality < 0.65 ? '--warn' : '--ok');
+}
+
+function renderLog(){
+  const tb = $('log').querySelector('tbody'); tb.innerHTML = '';
+  for(const r of sessions){
+    const tr = document.createElement('tr');
+    [r.site, r.moment, r.bpm, r.rmssd === '' ? '--' : r.rmssd, r.quality].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+    tb.appendChild(tr);
+  }
+  $('empty').hidden = sessions.length > 0; $('exp').hidden = sessions.length === 0;
+}
+
+$('go').addEventListener('click', () => running ? finish(false) : start());
+$('exp').addEventListener('click', () => {
+  const keys = Object.keys(sessions[0]);
+  const csv = [keys.join(',')].concat(sessions.map(r => keys.map(k => r[k]).join(','))).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'pulse-sessions.csv'; a.click();
+});
+</script>
+</body>
+</html>
