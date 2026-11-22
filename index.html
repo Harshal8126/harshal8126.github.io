@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulse and vibration test</title>
+<style>
+:root{
+  --bg:#EDF1F2; --surface:#FFFFFF; --ink:#13242B; --muted:#586C75; --line:#C9D5D9;
+  --pulse:#C8283F; --accent:#0E6F7C; --vib:#8A5A00; --ok:#1E7B4A; --warn:#9A5A08; --bad:#B3261E;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    --bg:#0F1A1F; --surface:#17262D; --ink:#E6EEF1; --muted:#9AB0B8; --line:#2B3F48;
+    --pulse:#FF6B7F; --accent:#4CC3D1; --vib:#E8B04A; --ok:#58C98A; --warn:#E8A84A; --bad:#FF8A80;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+main{max-width:520px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.4rem;margin:0 0 4px;font-weight:650}
+p.lead{margin:0 0 16px;color:var(--muted);font-size:.95rem}
+.row{display:flex;gap:10px;margin-bottom:12px}
+.row label{flex:1;font-size:.85rem;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+select{font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:14px 18px;cursor:pointer}
+button:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#go{width:100%;background:var(--accent);color:#fff}
+#go.stop{background:var(--pulse)}
+@media (prefers-color-scheme: dark){ #go{color:#06242A} #go.stop{color:#2A0A10} }
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:14px}
+.cap{font-size:.82rem;color:var(--muted);margin:0 0 4px}
+canvas.wave{width:100%;height:105px;display:block}
+canvas.wave + p.cap{margin-top:10px}
+#status{margin:10px 0 0;font-size:.92rem;min-height:2.6em}
+#sensor{margin:4px 0 0;font-size:.82rem;color:var(--muted)}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;width:0;background:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px}
+.stat b{display:block;font-size:1.45rem;font-variant-numeric:tabular-nums}
+.stat span{font-size:.78rem;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:.8rem;margin-top:6px}
+th,td{text-align:left;padding:6px 3px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+th{color:var(--muted);font-weight:600}
+h2{font-size:1rem;margin:0}
+.small{font-size:.82rem;color:var(--muted)}
+#exp{margin-top:10px;background:transparent;color:var(--accent);border:1px solid var(--accent);padding:10px 14px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Pulse and vibration test</h1>
+  <p class="lead">Records two views of the same heartbeat: blood volume from the camera and body vibration from the motion sensor.</p>
+
+  <div class="row">
+    <label>Body site
+      <select id="site">
+        <option>Fingertip</option>
+        <option>Temple</option>
+        <option>Forehead</option>
+        <option>Chest (phone resting)</option>
+        <option>Other</option>
+      </select>
+    </label>
+    <label>Moment
+      <select id="moment">
+        <option>Baseline</option>
+        <option>Before audio</option>
+        <option>After audio</option>
+        <option>Other</option>
+      </select>
+    </label>
+  </div>
+
+  <button id="go">Start 60-second test</button>
+  <div class="bar"><i id="prog"></i></div>
+  <p id="status">Cover the rear camera and flash with your fingertip, press lightly, and keep still.</p>
+  <p id="sensor"></p>
+
+  <div class="panel">
+    <p class="cap">Blood-volume pulse (camera)</p>
+    <canvas class="wave" id="wave"></canvas>
+    <p class="cap">Body vibration (motion sensor)</p>
+    <canvas class="wave" id="wave2"></canvas>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b id="hr">--</b><span>BPM (camera)</span></div>
+    <div class="stat"><b id="hrv">--</b><span>HRV, RMSSD ms</span></div>
+    <div class="stat"><b id="sig">--</b><span>camera signal</span></div>
+    <div class="stat"><b id="vhr">--</b><span>BPM (vibration)</span></div>
+    <div class="stat"><b id="vstr">--</b><span>vibration rhythm</span></div>
+    <div class="stat"><b id="mov">--</b><span>movement</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>Sessions</h2>
+    <table id="log"><thead><tr><th>Site</th><th>Moment</th><th>BPM</th><th>HRV</th><th>Vib</th><th>Match</th></tr></thead><tbody></tbody></table>
+    <p class="small" id="empty">No sessions yet. HRV is only calculated after a full test.</p>
+    <button id="exp" hidden>Download CSV</button>
+  </div>
+
+  <p class="small">Research tool, not a medical device. For the vibration signal, lie down and rest the phone on your chest or the body part, and stay still. Phone motion sensors are coarse, so the vibration reading is often weak.</p>
+</main>
+
+<script>
+//DSP-START
+const FS = 30;   // camera analysis rate (Hz)
+const FSA = 50;  // motion analysis rate (Hz)
+
+function movAvg(x, w){
+  const n = x.length, out = new Float64Array(n), h = Math.floor(w/2);
+  const pre = new Float64Array(n+1);
+  for(let i=0;i<n;i++) pre[i+1] = pre[i] + x[i];
+  for(let i=0;i<n;i++){
+    const a = Math.max(0, i-h), b = Math.min(n, i+h+1);
+    out[i] = (pre[b]-pre[a])/(b-a);
+  }
+  return out;
+}
+function mean(a){ let s=0; for(const v of a) s+=v; return a.length? s/a.length : NaN; }
+function sd(a){ const m=mean(a); let s=0; for(const v of a) s+=(v-m)*(v-m); return a.length>1? Math.sqrt(s/(a.length-1)) : NaN; }
+function median(a){ const b=[...a].sort((p,q)=>p-q), n=b.length; return n? (n%2? b[(n-1)/2] : (b[n/2-1]+b[n/2])/2) : NaN; }
+
+// linear resampling of irregular samples (times in ms) to a fixed rate
+function resampleUniform(ts, vs, fs){
+  const t0 = ts[0], tEnd = ts[ts.length-1];
+  const n = Math.floor((tEnd - t0)/1000*fs);
+  const out = new Float64Array(Math.max(0,n));
+  let j = 0;
+  for(let i=0;i<n;i++){
+    const t = t0 + i*1000/fs;
+    while(j < ts.length-2 && ts[j+1] < t) j++;
+    const f = Math.max(0, Math.min(1, (t - ts[j])/((ts[j+1] - ts[j]) || 1)));
+    out[i] = vs[j] + (vs[j+1] - vs[j])*f;
+  }
+  return out;
+}
+
+// seg: [{t (ms), v (red channel mean)}] in time order
+function analyze(seg){
+  if(seg.length < FS*4) return null;
+  const x = resampleUniform(seg.map(s=>s.t), seg.map(s=>s.v), FS);
+  const n = x.length;
+  if(n < FS*4) return null;
+  const base = movAvg(x, FS+1);
+  const hp = new Float64Array(n);
+  for(let i=0;i<n;i++) hp[i] = x[i] - base[i];
+  const lp = movAvg(hp, 5);
+  const s = new Float64Array(n);
+  for(let i=0;i<n;i++) s[i] = -lp[i]; // blood absorbs light: red dips at each pulse
+
+  const sdS = sd(s), meanX = mean(x);
+  const pi = meanX > 0 ? (sd(lp)/meanX)*100 : 0;
+
+  const peaks = [];
+  const minDist = Math.round(0.33*FS), edge = FS;
+  for(let i=edge;i<n-edge;i++){
+    if(s[i] > s[i-1] && s[i] >= s[i+1] && s[i] > 0.25*sdS){
+      const denom = s[i-1] - 2*s[i] + s[i+1];
+      const d = denom !== 0 ? 0.5*(s[i-1]-s[i+1])/denom : 0;
+      const idx = i + d;
+      if(peaks.length && (idx - peaks[peaks.length-1]) < minDist){
+        const li = Math.round(peaks[peaks.length-1]);
+        if(s[i] > s[li]) peaks[peaks.length-1] = idx;
+      } else peaks.push(idx);
+    }
+  }
+  const ibi = [];
+  for(let k=1;k<peaks.length;k++) ibi.push((peaks[k]-peaks[k-1])/FS);
+  const plausible = ibi.filter(v => v>=0.33 && v<=1.5);
+  const med = median(plausible);
+  const ok = ibi.map(v => v>=0.33 && v<=1.5 && Math.abs(v-med) <= 0.3*med);
+  const good = ibi.filter((v,k)=>ok[k]);
+
+  const hr = good.length ? 60/mean(good) : NaN;
+  let rmssd = NaN, sdnn = NaN;
+  const diffs = [];
+  for(let k=1;k<ibi.length;k++) if(ok[k] && ok[k-1]) diffs.push(ibi[k]-ibi[k-1]);
+  if(diffs.length >= 10) rmssd = Math.sqrt(mean(diffs.map(d=>d*d)))*1000;
+  if(good.length >= 10) sdnn = sd(good)*1000;
+  const frac = ibi.length ? good.length/ibi.length : 0;
+  return { s, peaks, hr, rmssd, sdnn, pi, quality: good.length < 5 ? 0 : frac, beats: good.length, seconds: n/FS };
+}
+function qualityLabel(q){ return q >= 0.85 ? 'Good' : q >= 0.65 ? 'Fair' : 'Poor'; }
+
+// seg: [{t (ms), x, y, z}] acceleration including gravity (m/s^2)
+function analyzeAccel(seg){
+  if(seg.length < FSA*3) return null;
+  const ts = seg.map(s=>s.t);
+  const ax = [seg.map(s=>s.x), seg.map(s=>s.y), seg.map(s=>s.z)].map(v => resampleUniform(ts, v, FSA));
+  const n = ax[0].length;
+  if(n < FSA*4) return null;
+  // movement: gross motion after removing gravity and slow drift (1 s window)
+  const hp = ax.map(a => { const b = movAvg(a, FSA+1); const o = new Float64Array(n); for(let i=0;i<n;i++) o[i] = a[i]-b[i]; return o; });
+  let ms = 0; for(let i=0;i<n;i++) ms += hp[0][i]**2 + hp[1][i]**2 + hp[2][i]**2;
+  const movement = Math.sqrt(ms/n);
+  // heartbeat band: strong high-pass (about 4 Hz) removes body sway, breathing and hand drift,
+  // then light smoothing; PCA finds the axis combination with most energy
+  const bp = ax.map(a => { const b = movAvg(a, 13); const o = new Float64Array(n); for(let i=0;i<n;i++) o[i] = a[i]-b[i]; return movAvg(o, 3); });
+  const C = [[0,0,0],[0,0,0],[0,0,0]];
+  for(let p=0;p<3;p++) for(let q=0;q<3;q++){ let s=0; for(let i=0;i<n;i++) s += bp[p][i]*bp[q][i]; C[p][q] = s/n; }
+  let v = [1,1,1];
+  for(let it=0;it<25;it++){
+    const w = [0,1,2].map(p => C[p][0]*v[0] + C[p][1]*v[1] + C[p][2]*v[2]);
+    const nr = Math.hypot(w[0],w[1],w[2]) || 1; v = w.map(z => z/nr);
+  }
+  const s = new Float64Array(n);
+  for(let i=0;i<n;i++) s[i] = v[0]*bp[0][i] + v[1]*bp[1][i] + v[2]*bp[2][i];
+  // rhythm via autocorrelation (sign-independent), lags for 40-180 BPM
+  let r0 = 0; for(let i=0;i<n;i++) r0 += s[i]*s[i];
+  if(r0 <= 0) return { s, movement, hr: NaN, strength: 0 };
+  const lmin = Math.ceil(FSA*0.33), lmax = Math.floor(FSA*1.5);
+  const r = new Float64Array(lmax+2);
+  for(let l=lmin-1;l<=lmax+1;l++){ let a=0; for(let i=0;i+l<n;i++) a += s[i]*s[i+l]; r[l] = a/r0; }
+  let best = -1, bv = -Infinity;
+  for(let l=lmin;l<=lmax;l++) if(r[l] > r[l-1] && r[l] >= r[l+1] && r[l] > bv){ bv = r[l]; best = l; }
+  if(best < 0) return { s, movement, hr: NaN, strength: 0 };
+  const den = r[best-1] - 2*r[best] + r[best+1];
+  const lag = best + (den !== 0 ? 0.5*(r[best-1]-r[best+1])/den : 0);
+  return { s, movement, hr: 60*FSA/lag, strength: Math.max(0, bv) };
+}
+function movementLabel(m){ return m < 0.03 ? 'Still' : m < 0.15 ? 'Some' : 'Lots'; }
+function strengthLabel(s){ return s >= 0.5 ? 'Clear' : s >= 0.3 ? 'Weak' : 'None'; }
+function matchLabel(a, b){
+  if(!isFinite(a) || !isFinite(b)) return '';
+  if(Math.abs(a-b) <= 4) return 'Match';
+  if(Math.abs(a-2*b) <= 6 || Math.abs(2*a-b) <= 6) return 'Harmonic';
+  return 'Differs';
+}
+//DSP-END
+
+const $ = id => document.getElementById(id);
+const DURATION = 60, SETTLE = 5;
+let stream = null, track = null, video = null, running = false, startT = 0, tick = null;
+let samples = [], acc = [], lastVT = -1, motionSeen = false;
+const probe = document.createElement('canvas'); probe.width = 16; probe.height = 16;
+const pctx = probe.getContext('2d', { willReadFrequently: true });
+const waves = [ { cv: $('wave'), cx: $('wave').getContext('2d') }, { cv: $('wave2'), cx: $('wave2').getContext('2d') } ];
+const sessions = [];
+
+function sizeCanvases(){
+  const d = window.devicePixelRatio || 1;
+  for(const w of waves){ const r = w.cv.getBoundingClientRect(); w.cv.width = r.width*d; w.cv.height = r.height*d; w.cx.setTransform(d,0,0,d,0,0); }
+}
+function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+function drawSig(w, s, peaks, fs, color){
+  const W = w.cv.clientWidth, H = w.cv.clientHeight, c = w.cx;
+  c.clearRect(0,0,W,H);
+  c.strokeStyle = css('--line'); c.lineWidth = 1;
+  c.beginPath(); c.moveTo(0,H/2); c.lineTo(W,H/2); c.stroke();
+  if(!s) return;
+  const show = Math.min(s.length, 8*fs), off = s.length - show;
+  let m = 1e-9;
+  for(let i=0;i<show;i++) m = Math.max(m, Math.abs(s[off+i]));
+  c.strokeStyle = css(color); c.lineWidth = 2; c.beginPath();
+  for(let i=0;i<show;i++){
+    const X = i/(show-1)*W, Y = H/2 - (s[off+i]/m)*(H/2-8);
+    i ? c.lineTo(X,Y) : c.moveTo(X,Y);
+  }
+  c.stroke();
+  if(peaks){
+    c.fillStyle = css('--pulse');
+    for(const p of peaks){
+      if(p < off) continue;
+      const X = (p-off)/(show-1)*W, Y = H/2 - (s[Math.round(p)]/m)*(H/2-8);
+      c.beginPath(); c.arc(X, Y, 4, 0, 6.283); c.fill();
+    }
+  }
+}
+function redraw(a, b){ drawSig(waves[0], a && a.s, a && a.peaks, FS, '--accent'); drawSig(waves[1], b && b.s, null, FSA, '--vib'); }
+addEventListener('resize', () => { sizeCanvases(); redraw(null, null); });
+sizeCanvases(); redraw(null, null);
+
+function setStatus(msg, cls){ const s = $('status'); s.textContent = msg; s.style.color = cls ? css(cls) : css('--ink'); }
+
+function onMotion(e){
+  const a = e.accelerationIncludingGravity;
+  if(!a || a.x == null) return;
+  motionSeen = true;
+  acc.push({ t: performance.now(), x: a.x, y: a.y, z: a.z });
+}
+
+async function start(){
+  // motion permission on iPhone must be requested directly from the tap
+  let motionAllowed = typeof DeviceMotionEvent !== 'undefined';
+  if(motionAllowed && typeof DeviceMotionEvent.requestPermission === 'function'){
+    try{ motionAllowed = (await DeviceMotionEvent.requestPermission()) === 'granted'; }catch(e){ motionAllowed = false; }
+  }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    setStatus('Camera access is not available here. Open this file in Chrome over https or localhost.', '--bad'); return;
+  }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30 } },
+      audio: false
+    });
+  }catch(e){
+    setStatus('Camera blocked. Allow camera access, and open the page in Chrome (https) if it is embedded in another app.', '--bad'); return;
+  }
+  track = stream.getVideoTracks()[0];
+  let torch = false;
+  try{
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if(caps.torch){ await track.applyConstraints({ advanced: [{ torch: true }] }); torch = true; }
+  }catch(e){}
+  video = document.createElement('video');
+  video.setAttribute('playsinline',''); video.muted = true; video.srcObject = stream;
+  await video.play();
+  samples = []; acc = []; lastVT = -1; motionSeen = false; running = true; startT = performance.now();
+  if(motionAllowed) addEventListener('devicemotion', onMotion);
+  $('sensor').textContent = motionAllowed ? 'Motion sensor: waiting for data...' : 'Motion sensor: not available or not allowed. Camera only.';
+  $('go').textContent = 'Stop'; $('go').classList.add('stop');
+  ['hr','hrv','sig','vhr','vstr','mov'].forEach(i => $(i).textContent = '--');
+  if(!torch) setStatus('Flash could not be turned on from the browser. Use a bright light, or on iPhone use a native app.', '--warn');
+  pump();
+  tick = setInterval(update, 250);
+}
+
+function pump(){
+  const cb = (now) => {
+    if(!running) return;
+    if(!('requestVideoFrameCallback' in video) && video.currentTime === lastVT){ next(); return; }
+    lastVT = video.currentTime;
+    pctx.drawImage(video, 0, 0, 16, 16);
+    const d = pctx.getImageData(0,0,16,16).data; let r=0,g=0,b=0; const n = d.length/4;
+    for(let i=0;i<d.length;i+=4){ r+=d[i]; g+=d[i+1]; b+=d[i+2]; }
+    samples.push({ t: now, v: r/n, r: r/n, g: g/n, b: b/n });
+    next();
+  };
+  const next = () => ('requestVideoFrameCallback' in video) ? video.requestVideoFrameCallback(cb) : requestAnimationFrame(cb);
+  next();
+}
+
+function contactMessage(){
+  const site = $('site').value;
+  if(site.startsWith('Chest')) return null;
+  const last = samples.slice(-10); if(last.length < 5) return null;
+  const r = mean(last.map(s=>s.r)), g = mean(last.map(s=>s.g));
+  if(r >= 252) return 'Image is saturated. Press more lightly or reduce pressure on the lens.';
+  if(r < 40) return 'Too dark. Cover the camera and flash, or add light.';
+  if(site === 'Fingertip' && !(r > 90 && r > 1.4*g)) return 'No finger detected. Cover the camera and flash fully.';
+  return null;
+}
+
+function update(){
+  if(!running) return;
+  const now = performance.now(), el = (now - startT)/1000;
+  $('prog').style.width = Math.min(100, el/DURATION*100) + '%';
+  const warn = contactMessage();
+  const res = analyze(samples.filter(s => s.t >= now - 12000));
+  const ares = analyzeAccel(acc.filter(s => s.t >= now - 12000));
+  redraw(res, ares);
+  if(res && isFinite(res.hr)) $('hr').textContent = Math.round(res.hr);
+  if(res) $('sig').textContent = qualityLabel(res.quality);
+  if(ares){
+    $('vhr').textContent = isFinite(ares.hr) && ares.strength >= 0.3 ? Math.round(ares.hr) : '--';
+    $('vstr').textContent = strengthLabel(ares.strength);
+    $('mov').textContent = movementLabel(ares.movement);
+  }
+  if(el > 2 && !motionSeen && $('sensor').textContent.includes('waiting')) $('sensor').textContent = 'Motion sensor: no data. Camera only.';
+  else if(motionSeen) $('sensor').textContent = 'Motion sensor: recording.';
+  if(warn) setStatus(warn, '--warn');
+  else if(el < SETTLE) setStatus('Settling. Keep still.', null);
+  else setStatus('Measuring: ' + Math.max(0, Math.ceil(DURATION - el)) + ' s left. Keep still and breathe normally.', null);
+  if(el >= DURATION) finish(true);
+}
+
+function cleanup(){
+  running = false; clearInterval(tick);
+  removeEventListener('devicemotion', onMotion);
+  try{ track && track.applyConstraints({ advanced: [{ torch: false }] }); }catch(e){}
+  stream && stream.getTracks().forEach(t => t.stop());
+  $('go').textContent = 'Start 60-second test'; $('go').classList.remove('stop');
+}
+
+function finish(complete){
+  const cut = startT + SETTLE*1000;
+  const seg = samples.filter(s => s.t >= cut);
+  const aseg = acc.filter(s => s.t >= cut);
+  const secs = seg.length ? (seg[seg.length-1].t - seg[0].t)/1000 : 0;
+  const fps = secs ? seg.length/secs : 0;
+  cleanup();
+  $('prog').style.width = complete ? '100%' : '0%';
+  if(secs < 20){ setStatus('Stopped too early. At least 25 seconds are needed.', '--warn'); return; }
+  let res = analyze(seg); if(res && !isFinite(res.hr)) res = null;
+  const ares = analyzeAccel(aseg);
+  if(!res && !ares){ setStatus('Could not find a clear signal. Retry with lighter pressure and keep still.', '--bad'); return; }
+  redraw(res, ares);
+  $('hr').textContent = res ? Math.round(res.hr) : '--';
+  $('hrv').textContent = res && isFinite(res.rmssd) ? Math.round(res.rmssd) : '--';
+  $('sig').textContent = res ? qualityLabel(res.quality) : 'None';
+  if(ares){
+    $('vhr').textContent = isFinite(ares.hr) && ares.strength >= 0.3 ? Math.round(ares.hr) : '--';
+    $('vstr').textContent = strengthLabel(ares.strength);
+    $('mov').textContent = movementLabel(ares.movement);
+  }
+  const vib = ares && isFinite(ares.hr) && ares.strength >= 0.3 ? ares.hr : NaN;
+  const row = {
+    site: $('site').value, moment: $('moment').value, time: new Date().toLocaleTimeString(),
+    cam_bpm: res ? Math.round(res.hr) : '', rmssd: res && isFinite(res.rmssd) ? Math.round(res.rmssd) : '',
+    sdnn: res && isFinite(res.sdnn) ? Math.round(res.sdnn) : '', cam_quality: res ? qualityLabel(res.quality) : '',
+    perfusion_index: res ? res.pi.toFixed(2) : '', vib_bpm: isFinite(vib) ? Math.round(vib) : '',
+    vib_rhythm: ares ? ares.strength.toFixed(2) : '', movement: ares ? ares.movement.toFixed(3) : '',
+    match: res ? matchLabel(res.hr, vib) : '', camera_fps: fps.toFixed(1), seconds: Math.round(secs)
+  };
+  sessions.push(row); renderLog();
+  const poor = res && res.quality < 0.65;
+  setStatus(poor ? 'Done, but the camera signal was poor. Treat these numbers with caution.' :
+    'Done. Camera ran at about ' + fps.toFixed(0) + ' frames per second.', poor ? '--warn' : '--ok');
+}
+
+function renderLog(){
+  const tb = $('log').querySelector('tbody'); tb.innerHTML = '';
+  for(const r of sessions){
+    const tr = document.createElement('tr');
+    [r.site, r.moment, r.cam_bpm || '--', r.rmssd === '' ? '--' : r.rmssd, r.vib_bpm || '--', r.match || '--'].forEach(v => {
+      const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  }
+  $('empty').hidden = sessions.length > 0; $('exp').hidden = sessions.length === 0;
+}
+
+$('go').addEventListener('click', () => running ? finish(false) : start());
+$('exp').addEventListener('click', () => {
+  const keys = Object.keys(sessions[0]);
+  const csv = [keys.join(',')].concat(sessions.map(r => keys.map(k => r[k]).join(','))).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'pulse-sessions.csv'; a.click();
+});
+</script>
+</body>
+</html>
