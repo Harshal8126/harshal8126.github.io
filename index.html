@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Calm session</title>
+<title>Sonar breathing test</title>
 <style>
 :root{
   --bg:#EDF1F2; --surface:#FFFFFF; --ink:#13242B; --muted:#586C75; --line:#C9D5D9;
@@ -20,119 +20,76 @@
 body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
 main{max-width:520px;margin:0 auto;padding:20px 16px 40px}
 h1{font-size:1.4rem;margin:0 0 4px;font-weight:650}
-h2{font-size:1rem;margin:0 0 8px}
 p.lead{margin:0 0 14px;color:var(--muted);font-size:.95rem}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 label{font-size:.82rem;color:var(--muted);display:flex;flex-direction:column;gap:4px}
-label.wide{grid-column:1 / -1}
-select{font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
-button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:14px 18px;cursor:pointer}
-button:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-.primary{width:100%;background:var(--accent);color:#fff;margin-top:12px}
-.stopbtn{width:100%;background:var(--pulse);color:#fff;margin-top:12px}
-.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent);padding:10px 14px;margin-top:10px}
-@media (prefers-color-scheme: dark){ .primary{color:#06242A} .stopbtn{color:#2A0A10} }
+select,input[type=range]{font:inherit}
+select{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:14px 18px;cursor:pointer;width:100%;margin-top:12px;background:var(--accent);color:#fff}
+button.stop{background:var(--pulse)}
+@media (prefers-color-scheme: dark){ button{color:#06242A} button.stop{color:#2A0A10} }
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .small{font-size:.82rem;color:var(--muted)}
-ul.tips{margin:10px 0 0;padding-left:18px;font-size:.85rem;color:var(--muted)}
+ul{margin:8px 0 0;padding-left:18px;font-size:.85rem;color:var(--muted)}
 canvas{width:100%;display:block}
-#orb{height:210px}
-#trace{height:70px}
-#chart{height:130px}
-.phase{display:flex;justify-content:space-between;align-items:baseline;font-weight:600}
-.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:8px}
-.bar i{display:block;height:100%;width:0;background:var(--accent)}
-#status{margin:8px 0 0;font-size:.9rem;min-height:2.4em}
+#wave{height:120px} #chart{height:100px} #orb{height:140px}
+.big{display:flex;align-items:baseline;gap:8px}
+.big b{font-size:2.4rem;font-variant-numeric:tabular-nums}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px}
-.stat b{display:block;font-size:1.3rem;font-variant-numeric:tabular-nums}
+.stat b{display:block;font-size:1.15rem;font-variant-numeric:tabular-nums}
 .stat span{font-size:.74rem;color:var(--muted)}
-table{width:100%;border-collapse:collapse;font-size:.8rem;margin-top:6px}
-th,td{text-align:left;padding:6px 3px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
-th{color:var(--muted);font-weight:600}
+#status{margin:8px 0 0;font-size:.9rem;min-height:2.4em}
 </style>
 </head>
 <body>
 <main>
-  <h1>Calm session</h1>
-  <p class="lead">Measures breathing, heart rate and pulse shape while guiding your breathing with sound. Run one mode per session, then compare results.</p>
+  <h1>Sonar breathing test</h1>
+  <p class="lead">Plays a near-silent high tone and listens to its echo from your chest. Breathing moves the chest and changes the echo. No camera, no contact.</p>
 
-  <section id="setup" class="panel">
+  <div class="panel">
     <div class="grid">
-      <label class="wide">Mode
-        <select id="mode">
-          <option value="mirror">Mirror, then lead slower</option>
-          <option value="static">Static slow pace</option>
-          <option value="silence">Silence (control, no sound)</option>
-        </select>
+      <label>Tone frequency
+        <select id="freq"><option value="17000">17 kHz</option><option value="18000">18 kHz</option><option value="19000" selected>19 kHz</option><option value="20000">20 kHz</option></select>
       </label>
-      <label>Therapy length
-        <select id="len"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="15">15 min</option></select>
+      <label>Reference pace (visual guide)
+        <select id="ref"><option value="0">Off</option><option value="6">6 / min</option><option value="8">8 / min</option><option value="10">10 / min</option><option value="12">12 / min</option><option value="15">15 / min</option></select>
       </label>
-      <label>Target breaths/min
-        <select id="target"><option>5</option><option selected>6</option><option>7</option><option>8</option><option>10</option></select>
-      </label>
-      <label>Mirror phase
-        <select id="mir"><option value="1">1 min</option><option value="2" selected>2 min</option><option value="3">3 min</option></select>
-      </label>
-      <label>Lead speed
-        <select id="pct"><option value="3">Gentle (3%/min)</option><option value="5" selected>Medium (5%/min)</option><option value="8">Faster (8%/min)</option></select>
+      <label style="grid-column:1 / -1">Tone level: <span id="lvlv">0.20</span>
+        <input id="lvl" type="range" min="0.05" max="0.5" step="0.05" value="0.2">
       </label>
     </div>
-    <button id="go" class="primary">Start session</button>
-    <ul class="tips">
-      <li>Total time is length + 3 minutes (90 s silent baseline before, 90 s after).</li>
-      <li>Lie down, rest one fingertip lightly on the rear camera and flash. Resting the phone on your chest helps the breathing signal.</li>
-      <li>Keep device volume low. Follow the sound: it rises as you breathe in and falls as you breathe out.</li>
-      <li>Stop if you feel dizzy. Nothing here is medical advice.</li>
+    <button id="go">Start</button>
+    <ul>
+      <li>Lie or sit still in a quiet room with the phone 30-50 cm from your chest, resting on something solid, with the bottom edge (speaker and mic) pointing at you.</li>
+      <li>Do not talk. Keep nothing moving near the phone, such as a fan.</li>
+      <li>To check accuracy, pick a reference pace and follow the orb, or breathe at a steady count.</li>
+      <li>Some children, pets and a few adults can hear 17-18 kHz. Use 19-20 kHz and keep the level low.</li>
     </ul>
-  </section>
+  </div>
 
-  <section id="live" hidden>
+  <div id="live" hidden>
     <div class="panel">
-      <div class="phase"><span id="phaseName">Baseline</span><span id="clock">0:00</span></div>
-      <div class="bar"><i id="prog"></i></div>
-      <canvas id="orb"></canvas>
+      <div class="big"><b id="bpm">--</b><span>breaths per min</span><span class="small" id="conf"></span></div>
       <p id="status"></p>
-      <p class="small" id="sensor"></p>
+      <canvas id="orb"></canvas>
     </div>
     <div class="stats">
-      <div class="stat"><b id="hr">--</b><span>heart rate, BPM</span></div>
-      <div class="stat"><b id="br">--</b><span id="brlab">breaths/min</span></div>
-      <div class="stat"><b id="pace">--</b><span>pacer, breaths/min</span></div>
-      <div class="stat"><b id="hrv">--</b><span>HRV (RMSSD, ms)</span></div>
-      <div class="stat"><b id="rise">--</b><span>pulse rise, ms</span></div>
-      <div class="stat"><b id="notch">--</b><span>notch seen</span></div>
-      <div class="stat"><b id="pi">--</b><span>pulse amplitude, %</span></div>
-      <div class="stat"><b id="reg">--</b><span>beat variability, %</span></div>
-      <div class="stat"><b id="mov">--</b><span>movement</span></div>
+      <div class="stat"><b id="tone">--</b><span>tone received</span></div>
+      <div class="stat"><b id="src">--</b><span>signal used</span></div>
+      <div class="stat"><b id="aec">--</b><span>echo cancel</span></div>
     </div>
-    <div class="panel"><canvas id="trace"></canvas><p class="small" style="margin:6px 0 0">Camera pulse trace. A steady wave with one peak per beat means good contact.</p></div>
-    <div class="panel"><canvas id="chart"></canvas><p class="small" style="margin:6px 0 0">Pacer rate (line) and your measured breathing (dots), breaths per minute.</p></div>
-    <button id="stop" class="stopbtn">Stop session</button>
-  </section>
+    <div class="panel"><canvas id="wave"></canvas><p class="small" style="margin:6px 0 0">Echo signal, last 30 s. A smooth wave, one hump per breath, is what you want. Hold your breath for 10 s and it should flatten.</p></div>
+    <div class="panel"><canvas id="chart"></canvas><p class="small" style="margin:6px 0 0">Estimated breaths per minute over time (dots). The line is the reference pace, if set.</p></div>
+    <button id="stop" class="stop">Stop</button>
+  </div>
 
-  <section id="results" class="panel" hidden>
-    <h2>Results</h2>
-    <p class="small" id="resNote"></p>
-    <table id="resTable"><thead><tr><th>Phase</th><th>BPM</th><th>Breath</th><th>HRV</th><th>Notch</th><th>Rise</th></tr></thead><tbody></tbody></table>
-    <p id="delta" style="margin:10px 0 0"></p>
-    <h2 style="margin-top:16px">All sessions</h2>
-    <table id="hist"><thead><tr><th>Mode</th><th>&Delta; BPM</th><th>&Delta; Breath</th><th>&Delta; HRV</th></tr></thead><tbody></tbody></table>
-    <p class="small">Change = after the session minus baseline.</p>
-    <button id="exp" class="ghost">Download CSV</button>
-    <button id="again" class="primary">New session</button>
-  </section>
-
-  <p class="small" style="margin-top:16px">Research tool, not a medical device. Pulse-shape features (rise time, notch, amplitude, beat variability) are experimental and loosely inspired by traditional pulse reading (Nadi Pariksha). They carry no diagnostic meaning here.</p>
+  <p class="small" style="margin-top:16px">Research tool, not a medical device. It measures breathing and gross movement only, not heartbeat. Results depend a lot on the phone model.</p>
 </main>
 
 <script>
 //DSP-START
-const FS = 30;    // camera analysis rate (Hz)
-const FSA = 50;   // motion analysis rate (Hz)
-const THR = 6;    // spectral prominence needed to trust a breathing rhythm
-
 function movAvg(x, w){
   const n = x.length, out = new Float64Array(n), h = Math.floor(w/2);
   const pre = new Float64Array(n+1);
@@ -141,25 +98,8 @@ function movAvg(x, w){
   return out;
 }
 function mean(a){ let s=0; for(const v of a) s+=v; return a.length? s/a.length : NaN; }
-function sd(a){ const m=mean(a); let s=0; for(const v of a) s+=(v-m)*(v-m); return a.length>1? Math.sqrt(s/(a.length-1)) : NaN; }
-function median(a){ const b=[...a].sort((p,q)=>p-q), n=b.length; return n? (n%2? b[(n-1)/2] : (b[n/2-1]+b[n/2])/2) : NaN; }
 
-function resampleUniform(ts, vs, fs){
-  if(ts.length < 2) return new Float64Array(0);
-  const t0 = ts[0], tEnd = ts[ts.length-1];
-  const n = Math.floor((tEnd - t0)/1000*fs);
-  const out = new Float64Array(Math.max(0,n));
-  let j = 0;
-  for(let i=0;i<n;i++){
-    const t = t0 + i*1000/fs;
-    while(j < ts.length-2 && ts[j+1] < t) j++;
-    const f = Math.max(0, Math.min(1, (t - ts[j])/((ts[j+1] - ts[j]) || 1)));
-    out[i] = vs[j] + (vs[j+1] - vs[j])*f;
-  }
-  return out;
-}
-
-// Strongest slow rhythm (0.08-0.5 Hz = 4.8-30 breaths/min) and how much it stands out
+// Strongest slow rhythm (0.08-0.5 Hz = 4.8-30 breaths/min) and how much it stands out from the rest
 function spectralPeak(a0, fs, f1=0.08, f2=0.5){
   if(a0.length < fs*20) return null;
   let a = a0, f = fs;
@@ -181,459 +121,227 @@ function spectralPeak(a0, fs, f1=0.08, f2=0.5){
     for(let i=0;i<n;i++){ re += w[i]*Math.cos(om*i); im += w[i]*Math.sin(om*i); }
     fr.push(q); pw.push(re*re + im*im);
   }
-  let pi = 0; for(let i=1;i<pw.length;i++) if(pw[i] > pw[pi]) pi = i;
+  // slow drifts and sway make the spectrum rise steadily toward the lowest frequencies. A real
+  // breathing rhythm is a local peak, so only local peaks away from the band edge are considered.
+  let pi = -1;
+  for(let i=3;i<pw.length-1;i++) if(pw[i] >= pw[i-1] && pw[i] >= pw[i+1] && (pi < 0 || pw[i] > pw[pi])) pi = i;
+  if(pi < 0) return null;
   let s = 0, c = 0;
   for(let i=0;i<pw.length;i++) if(Math.abs(fr[i]-fr[pi]) > 0.025){ s += pw[i]; c++; }
   const floor = c ? s/c : NaN;
   if(!(floor > 0)) return null;
   return { f: fr[pi], bpm: fr[pi]*60, prom: pw[pi]/floor };
 }
-
-// seg: [{t (ms), v (red channel mean)}]. Heart rate, HRV, pulse-shape features, and material for breathing.
-function analyzePPG(seg){
-  if(seg.length < FS*4) return null;
-  const x = resampleUniform(seg.map(s=>s.t), seg.map(s=>s.v), FS);
-  const n = x.length;
-  if(n < FS*4) return null;
-  const t0 = seg[0].t;
-  const base = movAvg(x, FS+1);
-  const hp = new Float64Array(n);
-  for(let i=0;i<n;i++) hp[i] = x[i] - base[i];
-  const lp = movAvg(hp, 5), lp3 = movAvg(hp, 3);
-  const s = new Float64Array(n), sh = new Float64Array(n);
-  for(let i=0;i<n;i++){ s[i] = -lp[i]; sh[i] = -lp3[i]; } // blood absorbs light: red dips at each pulse
-  const sdS = sd(s), meanX = mean(x);
-  const pi = meanX > 0 ? (sd(lp)/meanX)*100 : 0;
-
-  const peaks = [], minDist = Math.round(0.33*FS), edge = FS;
-  for(let i=edge;i<n-edge;i++){
-    if(s[i] > s[i-1] && s[i] >= s[i+1] && s[i] > 0.25*sdS){
-      const denom = s[i-1] - 2*s[i] + s[i+1];
-      const idx = i + (denom !== 0 ? 0.5*(s[i-1]-s[i+1])/denom : 0);
-      if(peaks.length && (idx - peaks[peaks.length-1]) < minDist){
-        const li = Math.round(peaks[peaks.length-1]);
-        if(s[i] > s[li]) peaks[peaks.length-1] = idx;
-      } else peaks.push(idx);
-    }
-  }
-  const ibi = [];
-  for(let k=1;k<peaks.length;k++) ibi.push((peaks[k]-peaks[k-1])/FS);
-  const med = median(ibi.filter(v => v>=0.33 && v<=1.5));
-  const ok = ibi.map(v => v>=0.33 && v<=1.5 && Math.abs(v-med) <= 0.3*med);
-  const good = ibi.filter((v,k)=>ok[k]);
-  const hr = good.length ? 60/mean(good) : NaN;
-  let rmssd = NaN, sdnn = NaN;
-  const diffs = [];
-  for(let k=1;k<ibi.length;k++) if(ok[k] && ok[k-1]) diffs.push(ibi[k]-ibi[k-1]);
-  if(diffs.length >= 10) rmssd = Math.sqrt(mean(diffs.map(d=>d*d)))*1000;
-  if(good.length >= 10) sdnn = sd(good)*1000;
-  const ibiCV = good.length >= 10 ? sd(good)/mean(good)*100 : NaN;
-
-  // per-beat shape features
-  const pk = peaks.map(p => { let b = Math.round(p); for(let i=Math.max(1,b-2);i<=Math.min(n-2,b+2);i++) if(sh[i] > sh[b]) b = i; return b; });
-  const F = { amp:[], rise:[], decay:[], up:[], refl:[], seen:[] };
-  const bt = [], bAmp = [], bIbi = [];
-  for(let k=1;k<peaks.length;k++){
-    if(!ok[k-1]) continue;
-    let i1 = pk[k-1], m1 = sh[i1];
-    for(let i=pk[k-1];i<=pk[k];i++) if(sh[i] < m1){ m1 = sh[i]; i1 = i; }
-    const amp = sh[pk[k]] - m1;
-    if(!(amp > 0)) continue;
-    const rise = (pk[k]-i1)/FS;
-    bt.push(t0 + pk[k]*1000/FS); bAmp.push(amp); bIbi.push(ibi[k-1]);
-    F.amp.push(amp); F.rise.push(rise);
-    if(k+1 < peaks.length && ok[k]){
-      let i2 = pk[k], m2 = sh[i2];
-      for(let i=pk[k];i<=pk[k+1];i++) if(sh[i] < m2){ m2 = sh[i]; i2 = i; }
-      const decay = (i2-pk[k])/FS;
-      F.decay.push(decay); F.up.push(rise/(rise+decay));
-      let rf = 0;
-      for(let i=pk[k]+2;i<i2-1;i++){
-        if(sh[i] > sh[i-1] && sh[i] >= sh[i+1]){ const h = (sh[i]-m2)/amp; if(h >= 0.03){ rf = h; break; } }
-      }
-      F.refl.push(rf); F.seen.push(rf > 0 ? 1 : 0);
-    }
-  }
-  return {
-    s, peaks, hr, rmssd, sdnn, ibiCV, pi,
-    ampCV: F.amp.length >= 8 ? sd(F.amp)/mean(F.amp)*100 : NaN,
-    riseMs: F.rise.length >= 5 ? median(F.rise)*1000 : NaN,
-    decayMs: F.decay.length >= 5 ? median(F.decay)*1000 : NaN,
-    upFrac: F.up.length >= 5 ? median(F.up) : NaN,
-    refl: F.refl.length >= 5 ? median(F.refl) : NaN,
-    notchFrac: F.seen.length >= 5 ? mean(F.seen) : NaN,
-    beats: good.length, quality: good.length < 5 ? 0 : good.length/ibi.length,
-    base, bt, bAmp, bIbi
-  };
-}
-function qualityLabel(q){ return q >= 0.85 ? 'Good' : q >= 0.65 ? 'Fair' : 'Poor'; }
-
-// Breathing leaves three marks on the pulse signal: baseline drift, beat size, and beat spacing
-function breathCandidates(res){
-  const out = [];
-  const b = spectralPeak(res.base, FS);
-  if(b) out.push({ src: 'Pulse baseline', bpm: b.bpm, prom: b.prom });
-  if(res.bt.length >= 20){
-    const a = spectralPeak(resampleUniform(res.bt, res.bAmp, 4), 4);
-    if(a) out.push({ src: 'Pulse size', bpm: a.bpm, prom: a.prom });
-    const r = spectralPeak(resampleUniform(res.bt, res.bIbi, 4), 4);
-    if(r) out.push({ src: 'Beat spacing', bpm: r.bpm, prom: r.prom });
-  }
-  return out;
-}
-// Phone resting on the chest: breathing tilts and lifts it
-function breathFromAccel(seg){
-  if(seg.length < 200) return null;
-  const ts = seg.map(s=>s.t); let best = null;
-  for(const k of ['x','y','z']){
-    const a = resampleUniform(ts, seg.map(s=>s[k]), 10);
-    const p = spectralPeak(a, 10);
-    if(p && (!best || p.prom > best.prom)) best = { src: 'Chest motion', bpm: p.bpm, prom: p.prom };
-  }
-  return best;
-}
 function fuseBreath(c){
   const v = c.filter(Boolean).sort((a,b)=>b.prom-a.prom);
   if(!v.length) return null;
   const best = v[0];
-  const agree = v.filter(o => o !== best && o.prom >= THR && Math.abs(o.bpm-best.bpm) <= 2).length;
-  const conf = best.prom >= THR ? (agree >= 1 ? 'High' : 'Medium') : 'Low';
+  const agree = v.filter(o => o !== best && o.prom >= 6 && Math.abs(o.bpm-best.bpm) <= 1.5).length;
+  let conf = 'Low';
+  if(best.prom >= 30 || (best.prom >= 10 && agree >= 1)) conf = 'High';
+  else if(best.prom >= 15) conf = 'Medium';
   return { bpm: best.bpm, src: best.src, conf, prom: best.prom };
 }
 
-function movementOf(seg){
-  if(seg.length < FSA*2) return null;
-  const ts = seg.map(s=>s.t);
-  let ms = 0, n = 0;
-  for(const k of ['x','y','z']){
-    const a = resampleUniform(ts, seg.map(s=>s[k]), FSA);
-    if(a.length < FSA*2) return null;
-    const b = movAvg(a, FSA+1);
-    for(let i=0;i<a.length;i++) ms += (a[i]-b[i])**2;
-    n = a.length;
-  }
-  return Math.sqrt(ms/n);
+// Mixes the microphone signal down against the tone: output is one [I, Q] point every 50 ms
+function makeDemod(fs, f0){
+  const B = Math.round(fs*0.05), w = 2*Math.PI*f0/fs;
+  let n = 0, cnt = 0, I = 0, Q = 0;
+  return { B, rate: fs/B, push(buf, out){
+    for(let i=0;i<buf.length;i++){
+      const x = buf[i], ph = w*n;
+      I += x*Math.cos(ph); Q += x*Math.sin(ph); n++; cnt++;
+      if(cnt === B){ out.push([2*I/B, 2*Q/B]); I = 0; Q = 0; cnt = 0; }
+    }
+  }};
 }
-function movementLabel(m){ return m < 0.03 ? 'Still' : m < 0.15 ? 'Some' : 'Lots'; }
-
-// Pacer controller. Called every 5 s. Mutates st.pace and returns a status label.
-function controlStep(st, inp){
-  const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
-  const m = inp.meas && inp.meas.conf !== 'Low' ? inp.meas : null;
-  if(st.mode === 'static'){ st.pace = st.target; return 'Fixed slow pace'; }
-  if(inp.tt < st.mirrorSec){
-    if(m) st.pace = clamp(st.pace + 0.4*(m.bpm - st.pace), st.target, 24);
-    return 'Mirroring your breathing';
+function detrend(a){
+  const n = a.length; let sx=0, sy=0, sxx=0, sxy=0;
+  for(let i=0;i<n;i++){ sx+=i; sy+=a[i]; sxx+=i*i; sxy+=i*a[i]; }
+  const slope = (n*sxy - sx*sy)/(n*sxx - sx*sx), icpt = (sy - slope*sx)/n;
+  const o = new Float64Array(n); for(let i=0;i<n;i++) o[i] = a[i] - (icpt + slope*i); return o;
+}
+// Fits a circle to the I/Q path (its centre is the fixed direct sound) and returns the unwrapped angle
+// of the echo around that centre. The angle follows chest displacement linearly, so it keeps the true
+// breathing rate even when the chest moves far enough to wrap the phase (4 mm at 19 kHz is over 2 radians).
+function circleAngle(I, Q){
+  const n = I.length, mx = mean(I), my = mean(Q);
+  let Suu=0, Suv=0, Svv=0, Su=0, Sv=0, Suz=0, Svz=0, Sz=0;
+  for(let i=0;i<n;i++){
+    const u = I[i]-mx, v = Q[i]-my, zz = u*u + v*v;
+    Suu += u*u; Suv += u*v; Svv += v*v; Su += u; Sv += v; Suz += u*zz; Svz += v*zz; Sz += zz;
   }
-  if(inp.movement === 'Lots') return 'Holding: movement';
-  if(!m) return 'Holding: breathing signal unclear';
-  const err = m.bpm - st.pace;
-  st.lagCount = err > 2 ? st.lagCount + 1 : 0;
-  st.farCount = err > 4 ? st.farCount + 1 : 0;
-  if(st.farCount >= 8){ st.pace = clamp(st.pace*1.05, st.target, 24); st.farCount = 0; st.lagCount = 0; return 'Easing back so you can catch up'; }
-  if(st.lagCount >= 3) return 'Holding: waiting for you to catch up';
-  if(st.pace <= st.target + 0.05){ st.pace = st.target; return 'Reached target pace'; }
-  st.pace = Math.max(st.target, st.pace*(1 - st.pct/100*(5/60)));
-  return 'Leading slower';
+  const M = [[Suu,Suv,Su],[Suv,Svv,Sv],[Su,Sv,n]], r = [Suz,Svz,Sz];
+  const det3 = m => m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1]) - m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0]) + m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+  const D = det3(M);
+  if(!isFinite(D) || Math.abs(D) < 1e-30) return null;
+  const col = k => M.map((row,i) => row.map((v,j) => j === k ? r[i] : v));
+  const cx = det3(col(0))/D/2, cy = det3(col(1))/D/2;
+  const th = new Float64Array(n);
+  let prev = 0;
+  for(let i=0;i<n;i++){
+    let a = Math.atan2(Q[i]-my-cy, I[i]-mx-cx);
+    if(i){ while(a - prev > Math.PI) a -= 2*Math.PI; while(a - prev < -Math.PI) a += 2*Math.PI; }
+    th[i] = a; prev = a;
+  }
+  return th;
+}
+// z: [[I,Q], ...] at `rate` Hz. Breathing moves the chest, which swings the echo around the fixed direct sound.
+function sonarAnalyze(z, rate){
+  const n = z.length;
+  if(n < rate*20) return null;
+  const Ir = Float64Array.from(z, p => p[0]), Qr = Float64Array.from(z, p => p[1]);
+  const I = detrend(Ir), Q = detrend(Qr);
+  const mag = detrend(Float64Array.from(z, p => Math.hypot(p[0], p[1])));
+  let cxx=0, cyy=0, cxy=0;
+  for(let i=0;i<n;i++){ cxx += I[i]*I[i]; cyy += Q[i]*Q[i]; cxy += I[i]*Q[i]; }
+  const ang = 0.5*Math.atan2(2*cxy, cxx - cyy), ca = Math.cos(ang), sa = Math.sin(ang);
+  const proj = new Float64Array(n);
+  for(let i=0;i<n;i++) proj[i] = I[i]*ca + Q[i]*sa;
+  const cands = [];
+  let wave = proj, angleCand = null;
+  const th = circleAngle(Ir, Qr);
+  if(th){
+    const p0 = spectralPeak(th, rate);
+    if(p0){ angleCand = { src: 'Echo angle', bpm: p0.bpm, prom: p0.prom }; cands.push(angleCand); }
+  }
+  const p1 = spectralPeak(proj, rate); if(p1) cands.push({ src: 'Echo phase', bpm: p1.bpm, prom: p1.prom });
+  const p2 = spectralPeak(mag, rate);  if(p2) cands.push({ src: 'Echo strength', bpm: p2.bpm, prom: p2.prom });
+  // the angle follows the chest linearly, so prefer it when it shows a clear rhythm; the other
+  // signals can lock onto a harmonic (double the true rate) when the chest moves a lot
+  let fused;
+  if(angleCand && angleCand.prom >= 15){
+    fused = { bpm: angleCand.bpm, src: angleCand.src, conf: angleCand.prom >= 30 ? 'High' : 'Medium', prom: angleCand.prom };
+    wave = detrend(th);
+  } else {
+    fused = fuseBreath(cands);
+    // without a clear angle rhythm, a single weak candidate is not trusted: only agreement or a very strong peak counts
+    if(fused && fused.conf === 'Medium') fused.conf = 'Low';
+  }
+  return { proj: wave, mag, cands, fused };
+}
+function toneStrengthDb(z, zr){
+  const k = Math.min(z.length, zr.length, 20);
+  if(k < 5) return NaN;
+  let a = 0, b = 0;
+  for(let i=1;i<=k;i++){ a += Math.hypot(z[z.length-i][0], z[z.length-i][1]); b += Math.hypot(zr[zr.length-i][0], zr[zr.length-i][1]); }
+  return 20*Math.log10((a/k)/((b/k) + 1e-9));
 }
 //DSP-END
 
 const $ = id => document.getElementById(id);
-const BASE_S = 90, POST_S = 90, SETTLE_MS = 4000;
-let stream = null, track = null, video = null, running = false, sessionStart = 0, timerSec = null, timerPace = null;
-let samples = [], acc = [], lastVT = -1, motionSeen = false;
-let cfg = null, st = null, rows = [], allRows = [], history = [], sid = 0;
-let audio = null, therapyStarted = false, therapyEnded = false;
-let rate = 14, paceTarget = 14, phaseAcc = 0, lastPaceT = 0, ctrlState = '', tickN = 0;
-let live = { long: null, breath: null, move: null, hr: NaN };
-const probe = document.createElement('canvas'); probe.width = 16; probe.height = 16;
-const pctx = probe.getContext('2d', { willReadFrequently: true });
+let ctx = null, stream = null, osc = null, tgain = null, script = null, srcNode = null, running = false, timer = null;
+let dm = null, dmRef = null, z = [], zr = [], hist = [], t0 = 0, fsB = 20, aecState = '--', refRate = 0, refPhase = 0, lastOrb = 0;
 
 function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 function setCanvas(cv){ const d = window.devicePixelRatio || 1, r = cv.getBoundingClientRect(); cv.width = r.width*d; cv.height = r.height*d; const c = cv.getContext('2d'); c.setTransform(d,0,0,d,0,0); return c; }
-function lastWindow(arr, ms, now){ let i = arr.length; const c = now - ms; while(i > 0 && arr[i-1].t >= c) i--; return arr.slice(i); }
-const fmt = (v, d=0) => isFinite(v) ? v.toFixed(d) : '--';
+function status(m, cls){ const s = $('status'); s.textContent = m; s.style.color = cls ? css(cls) : css('--ink'); }
+$('lvl').addEventListener('input', () => { $('lvlv').textContent = (+$('lvl').value).toFixed(2); if(tgain && ctx) tgain.gain.setTargetAtTime(+$('lvl').value, ctx.currentTime, 0.1); });
 
-// ---------- orb ----------
-function Lfun(ph){ const x = ph % 1; if(x < 0.4){ const u = x/0.4; return 0.5 - 0.5*Math.cos(Math.PI*u); } const u = (x-0.4)/0.6; return 0.5 + 0.5*Math.cos(Math.PI*u); }
-function drawOrb(L, label){
-  const cv = $('orb'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
-  c.clearRect(0,0,W,H);
-  const r = L == null ? 40 : 38 + 52*L;
-  c.fillStyle = css('--soft'); c.beginPath(); c.arc(W/2, H/2, r, 0, 6.283); c.fill();
-  c.strokeStyle = css('--accent'); c.lineWidth = 3; c.beginPath(); c.arc(W/2, H/2, r, 0, 6.283); c.stroke();
-  c.fillStyle = css('--ink'); c.font = '600 16px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.fillText(label || '', W/2, H/2);
-}
-
-// ---------- audio ----------
-function startAudio(){
-  const AC = window.AudioContext || window.webkitAudioContext;
-  const ctx = new AC();
-  const master = ctx.createGain(); master.gain.value = 0;
-  const filt = ctx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 400; filt.Q.value = 0.7;
-  filt.connect(master); master.connect(ctx.destination);
-  const oscs = [[87.3,0.45,'sine'],[174.6,0.5,'sine'],[261.6,0.28,'sine']].map(([f,g,t]) => {
-    const o = ctx.createOscillator(); o.type = t; o.frequency.value = f;
-    const gg = ctx.createGain(); gg.gain.value = g; o.connect(gg); gg.connect(filt); o.start();
-    return { o, f };
-  });
-  audio = { ctx, master, filt, oscs };
-  if(ctx.state === 'suspended') ctx.resume();
-}
-function stopAudio(){
-  if(!audio) return;
-  try{ audio.master.gain.setTargetAtTime(0, audio.ctx.currentTime, 0.3); }catch(e){}
-  const a = audio; audio = null;
-  setTimeout(() => { try{ a.oscs.forEach(o => o.o.stop()); a.ctx.close(); }catch(e){} }, 1200);
-}
-
-// ---------- therapy ----------
-function startTherapy(){
-  therapyStarted = true;
-  const bl = rows.filter(r => r.phase === 'baseline' && r.breath_bpm !== '' && r.breath_conf !== 'Low').map(r => +r.breath_bpm);
-  const b0 = bl.length ? median(bl) : 14;
-  st = { mode: cfg.mode, pace: Math.max(cfg.target, Math.min(24, b0)), target: cfg.target, pct: cfg.pct, mirrorSec: cfg.mirrorSec, lagCount: 0, farCount: 0 };
-  if(cfg.mode === 'static') st.pace = cfg.target;
-  paceTarget = st.pace; rate = st.pace; phaseAcc = 0; lastPaceT = performance.now();
-  ctrlState = cfg.mode === 'static' ? 'Fixed slow pace' : 'Mirroring your breathing';
-  if(cfg.mode !== 'silence'){ timerPace = setInterval(paceTick, 100); }
-}
-function endTherapy(){
-  therapyEnded = true; clearInterval(timerPace); stopAudio(); ctrlState = '';
-  drawOrb(null, 'Rest');
-}
-function paceTick(){
-  if(!running || !therapyStarted || therapyEnded) return;
-  const now = performance.now(), dt = (now - lastPaceT)/1000; lastPaceT = now;
-  rate += (paceTarget - rate)*(1 - Math.exp(-dt/6));
-  phaseAcc += dt*rate/60;
-  const tt = (now - sessionStart)/1000 - BASE_S;
-  const fade = Math.max(0, Math.min(1, tt/5, (cfg.therapySec - tt)/5));
-  const L = Lfun(phaseAcc);
-  if(audio){
-    const t = audio.ctx.currentTime;
-    audio.master.gain.setTargetAtTime(0.16*(0.2 + 0.8*L)*fade, t, 0.08);
-    audio.filt.frequency.setTargetAtTime(300 + 900*L, t, 0.1);
-    audio.oscs.forEach(o => o.o.frequency.setTargetAtTime(o.f*(1 + 0.08*L), t, 0.1));
-  }
-  drawOrb(L, (phaseAcc % 1) < 0.4 ? 'Breathe in' : 'Breathe out');
-}
-
-// ---------- sensing ----------
-function onMotion(e){
-  const a = e.accelerationIncludingGravity;
-  if(!a || a.x == null) return;
-  motionSeen = true;
-  acc.push({ t: performance.now(), x: a.x, y: a.y, z: a.z });
-}
-function pump(){
-  const cb = (now) => {
-    if(!running) return;
-    if(!('requestVideoFrameCallback' in video) && video.currentTime === lastVT){ next(); return; }
-    lastVT = video.currentTime;
-    if(now >= sessionStart + SETTLE_MS){
-      pctx.drawImage(video, 0, 0, 16, 16);
-      const d = pctx.getImageData(0,0,16,16).data; let r=0,g=0; const n = d.length/4;
-      for(let i=0;i<d.length;i+=4){ r += d[i]; g += d[i+1]; }
-      samples.push({ t: now, v: r/n, r: r/n, g: g/n });
-    }
-    next();
-  };
-  const next = () => ('requestVideoFrameCallback' in video) ? video.requestVideoFrameCallback(cb) : requestAnimationFrame(cb);
-  next();
-}
-function contactMessage(){
-  const last = samples.slice(-10); if(last.length < 5) return null;
-  const r = mean(last.map(s=>s.r)), g = mean(last.map(s=>s.g));
-  if(r >= 252) return 'Image is saturated. Press more lightly on the lens.';
-  if(r < 40) return 'Too dark. Cover the camera and flash, or add light.';
-  if(!(r > 90 && r > 1.4*g)) return 'No finger detected. Cover the camera and flash fully.';
-  return null;
-}
-
-// ---------- session ----------
-async function startSession(){
-  cfg = { mode: $('mode').value, therapySec: +$('len').value*60, target: +$('target').value, mirrorSec: +$('mir').value*60, pct: +$('pct').value };
-  let motionAllowed = typeof DeviceMotionEvent !== 'undefined';
-  if(motionAllowed && typeof DeviceMotionEvent.requestPermission === 'function'){
-    try{ motionAllowed = (await DeviceMotionEvent.requestPermission()) === 'granted'; }catch(e){ motionAllowed = false; }
-  }
-  if(cfg.mode !== 'silence') startAudio(); // created from the tap so the browser allows sound
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    stopAudio(); alert('Camera access is not available here. Open this page in Chrome over https.'); return;
-  }
+async function start(){
+  const f0 = +$('freq').value;
   try{
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30 } }, audio: false });
-  }catch(e){ stopAudio(); alert('Camera blocked. Allow camera access and try again.'); return; }
-  track = stream.getVideoTracks()[0];
-  let torch = false;
-  try{ const caps = track.getCapabilities ? track.getCapabilities() : {}; if(caps.torch){ await track.applyConstraints({ advanced: [{ torch: true }] }); torch = true; } }catch(e){}
-  video = document.createElement('video'); video.setAttribute('playsinline',''); video.muted = true; video.srcObject = stream;
-  await video.play();
-  sid++; samples = []; acc = []; rows = []; lastVT = -1; motionSeen = false; therapyStarted = false; therapyEnded = false; tickN = 0;
-  live = { long: null, breath: null, move: null, hr: NaN }; ctrlState = '';
-  running = true; sessionStart = performance.now();
-  if(motionAllowed) addEventListener('devicemotion', onMotion);
-  $('setup').hidden = true; $('results').hidden = true; $('live').hidden = false;
-  $('sensor').textContent = motionAllowed ? 'Motion sensor: waiting for data...' : 'Motion sensor not available. Breathing comes from the pulse signal only.';
-  $('status').textContent = torch ? 'Baseline: rest your fingertip on the camera and breathe naturally.' : 'Flash could not be turned on from the browser. Use a bright light, or a native app on iPhone.';
-  ['hr','br','pace','hrv','rise','notch','pi','reg','mov'].forEach(i => $(i).textContent = '--');
-  drawOrb(null, 'Breathe naturally');
-  pump();
-  timerSec = setInterval(tickSecond, 1000);
-}
-
-function phaseAt(el){
-  const T = cfg.therapySec;
-  if(el < BASE_S) return { name: 'baseline', pt: el };
-  if(el < BASE_S + T) return { name: 'therapy', pt: el - BASE_S };
-  if(el < BASE_S + T + POST_S) return { name: 'post', pt: el - BASE_S - T };
-  return { name: 'done', pt: 0 };
-}
-
-function tickSecond(){
-  if(!running) return;
-  const now = performance.now(), el = (now - sessionStart)/1000, ph = phaseAt(el);
-  if(ph.name === 'done'){ finishSession(true); return; }
-  if(ph.name === 'therapy' && !therapyStarted) startTherapy();
-  if(ph.name === 'post' && therapyStarted && !therapyEnded) endTherapy();
-  tickN++;
-  const short = analyzePPG(lastWindow(samples, 15000, now));
-  drawTrace(short);
-  live.hr = short && isFinite(short.hr) ? short.hr : NaN;
-  if(tickN % 5 === 0) deepStep(now, el, ph);
-  updateUI(el, ph);
-}
-
-function deepStep(now, el, ph){
-  const long = analyzePPG(lastWindow(samples, 45000, now));
-  const aseg = lastWindow(acc, 45000, now);
-  const mv = movementOf(lastWindow(acc, 10000, now));
-  let cands = long ? breathCandidates(long) : [];
-  const ac = breathFromAccel(aseg); if(ac) cands.push(ac);
-  const br = fuseBreath(cands);
-  live.long = long; live.breath = br; live.move = mv == null ? null : movementLabel(mv);
-  if(ph.name === 'therapy' && st && cfg.mode !== 'silence'){
-    ctrlState = controlStep(st, { tt: ph.pt, meas: br, movement: live.move });
-    paceTarget = st.pace;
-  }
-  const L = long || {};
-  const row = {
-    session: sid, mode: cfg.mode, t_s: Math.round(el), phase: ph.name, phase_s: Math.round(ph.pt),
-    state: ph.name === 'therapy' ? ctrlState : '',
-    pace_bpm: therapyStarted && !therapyEnded && cfg.mode !== 'silence' ? rate.toFixed(1) : '',
-    breath_bpm: br ? br.bpm.toFixed(1) : '', breath_src: br ? br.src : '', breath_conf: br ? br.conf : '',
-    hr: isFinite(L.hr) ? L.hr.toFixed(1) : '', rmssd: isFinite(L.rmssd) ? L.rmssd.toFixed(0) : '', sdnn: isFinite(L.sdnn) ? L.sdnn.toFixed(0) : '',
-    beat_cv_pct: isFinite(L.ibiCV) ? L.ibiCV.toFixed(1) : '', rise_ms: isFinite(L.riseMs) ? L.riseMs.toFixed(0) : '',
-    decay_ms: isFinite(L.decayMs) ? L.decayMs.toFixed(0) : '', upstroke_frac: isFinite(L.upFrac) ? L.upFrac.toFixed(2) : '',
-    notch_ratio: isFinite(L.refl) ? L.refl.toFixed(2) : '', notch_seen: isFinite(L.notchFrac) ? L.notchFrac.toFixed(2) : '',
-    amp_pi_pct: isFinite(L.pi) ? L.pi.toFixed(2) : '', amp_cv_pct: isFinite(L.ampCV) ? L.ampCV.toFixed(1) : '',
-    cam_quality: L.quality != null ? qualityLabel(L.quality) : '', movement: live.move || ''
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  }catch(e){ alert('Microphone blocked. Allow microphone access and open the page over https.'); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  try{ ctx = new AC({ sampleRate: 48000 }); }catch(e){ ctx = new AC(); }
+  if(ctx.state === 'suspended') await ctx.resume();
+  const fs = ctx.sampleRate;
+  if(f0 > fs/2 - 1500){ alert('This phone processes audio at ' + fs + ' Hz, too low for that tone. Choose a lower frequency.'); cleanup(); return; }
+  const st = stream.getAudioTracks()[0].getSettings ? stream.getAudioTracks()[0].getSettings() : {};
+  aecState = st.echoCancellation === false ? 'Off' : st.echoCancellation === true ? 'ON' : 'Unknown';
+  dm = makeDemod(fs, f0); dmRef = makeDemod(fs, f0 - 1300); fsB = dm.rate;
+  z = []; zr = []; hist = [];
+  tgain = ctx.createGain(); tgain.gain.value = 0;
+  osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = f0;
+  osc.connect(tgain); tgain.connect(ctx.destination); osc.start();
+  tgain.gain.setTargetAtTime(+$('lvl').value, ctx.currentTime, 0.4);
+  srcNode = ctx.createMediaStreamSource(stream);
+  script = ctx.createScriptProcessor(4096, 1, 1);
+  script.onaudioprocess = e => {
+    if(!running) return;
+    const buf = e.inputBuffer.getChannelData(0), a = [], b = [];
+    dm.push(buf, a); dmRef.push(buf, b);
+    for(const p of a) z.push(p); for(const p of b) zr.push(p);
+    if(z.length > 1400) z.splice(0, z.length - 1400);
+    if(zr.length > 1400) zr.splice(0, zr.length - 1400);
   };
-  rows.push(row); allRows.push(row);
+  srcNode.connect(script); script.connect(ctx.destination);
+  running = true; t0 = performance.now(); refRate = +$('ref').value; refPhase = 0; lastOrb = performance.now();
+  $('live').hidden = false; $('go').hidden = true;
+  $('aec').textContent = aecState; $('bpm').textContent = '--'; $('conf').textContent = '';
+  status('Warming up. Keep still, do not talk.');
+  timer = setInterval(update, 2000);
+  requestAnimationFrame(orbLoop);
+}
+
+function update(){
+  if(!running) return;
+  const el = (performance.now() - t0)/1000;
+  const db = toneStrengthDb(z, zr);
+  $('tone').textContent = isFinite(db) ? (db > 15 ? 'Good' : db > 6 ? 'Weak' : 'None') + ' (' + db.toFixed(0) + ' dB)' : '--';
+  if(aecState === 'ON'){ status('Echo cancellation is on, which usually removes the tone. Sonar will likely not work on this browser or phone.', '--bad'); }
+  else if(isFinite(db) && db < 6){ status('The tone is barely received. Try another frequency, a higher level, or point the speaker and mic at your chest.', '--warn'); }
+  else if(el < 25){ status('Collecting data. ' + Math.max(0, Math.ceil(25 - el)) + ' s until the first estimate.'); }
+  if(el < 25) { drawWave(null); return; }
+  const win = z.slice(-600);
+  const res = sonarAnalyze(win, fsB);
+  if(!res){ return; }
+  drawWave(res.proj);
+  const f = res.fused;
+  if(f && f.conf !== 'Low'){
+    $('bpm').textContent = f.bpm.toFixed(1); $('conf').textContent = f.conf.toLowerCase() + ' confidence'; $('src').textContent = f.src;
+    if(!(aecState === 'ON') && !(isFinite(db) && db < 6)) status('Tracking your breathing. Stay still.', '--ok');
+  }else{
+    $('bpm').textContent = '--'; $('conf').textContent = 'unclear'; $('src').textContent = '--';
+    if(!(aecState === 'ON') && !(isFinite(db) && db < 6)) status('No clear breathing rhythm yet. Keep still and breathe normally.', '--warn');
+  }
+  hist.push({ t: el, bpm: f && f.conf !== 'Low' ? f.bpm : null });
   drawChart();
 }
 
-function drawTrace(res){
-  const cv = $('trace'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
+function drawWave(p){
+  const cv = $('wave'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
   c.clearRect(0,0,W,H); c.strokeStyle = css('--line'); c.beginPath(); c.moveTo(0,H/2); c.lineTo(W,H/2); c.stroke();
-  if(!res) return;
-  const show = Math.min(res.s.length, 8*FS), off = res.s.length - show;
-  let m = 1e-9; for(let i=0;i<show;i++) m = Math.max(m, Math.abs(res.s[off+i]));
+  if(!p) return;
+  let m = 1e-12; for(let i=0;i<p.length;i++) m = Math.max(m, Math.abs(p[i]));
   c.strokeStyle = css('--accent'); c.lineWidth = 2; c.beginPath();
-  for(let i=0;i<show;i++){ const X = i/(show-1)*W, Y = H/2 - (res.s[off+i]/m)*(H/2-6); i ? c.lineTo(X,Y) : c.moveTo(X,Y); }
+  for(let i=0;i<p.length;i++){ const X = i/(p.length-1)*W, Y = H/2 - (p[i]/m)*(H/2-8); i ? c.lineTo(X,Y) : c.moveTo(X,Y); }
   c.stroke();
 }
-
 function drawChart(){
   const cv = $('chart'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
-  const total = BASE_S + cfg.therapySec + POST_S, y0 = 4, y1 = 24;
-  const X = t => 24 + t/total*(W-30), Y = v => H-14 - (v-y0)/(y1-y0)*(H-24);
-  c.clearRect(0,0,W,H);
-  c.strokeStyle = css('--line'); c.fillStyle = css('--muted'); c.font = '10px system-ui'; c.lineWidth = 1;
-  for(const v of [6,12,18,24]){ c.beginPath(); c.moveTo(24,Y(v)); c.lineTo(W-6,Y(v)); c.stroke(); c.fillText(v, 2, Y(v)+3); }
-  for(const t of [BASE_S, BASE_S+cfg.therapySec]){ c.beginPath(); c.moveTo(X(t),4); c.lineTo(X(t),H-14); c.stroke(); }
-  c.strokeStyle = css('--accent'); c.lineWidth = 2; c.beginPath(); let started = false;
-  for(const r of rows){ if(r.pace_bpm === '') continue; const x = X(r.t_s), y = Y(+r.pace_bpm); started ? c.lineTo(x,y) : c.moveTo(x,y); started = true; }
-  c.stroke();
+  const tmax = Math.max(60, hist.length ? hist[hist.length-1].t : 60), y0 = 4, y1 = 30;
+  const X = t => 24 + t/tmax*(W-30), Y = v => H-12 - (v-y0)/(y1-y0)*(H-20);
+  c.clearRect(0,0,W,H); c.strokeStyle = css('--line'); c.fillStyle = css('--muted'); c.font = '10px system-ui'; c.lineWidth = 1;
+  for(const v of [6,12,18,24,30]){ c.beginPath(); c.moveTo(24,Y(v)); c.lineTo(W-6,Y(v)); c.stroke(); c.fillText(v, 2, Y(v)+3); }
+  if(refRate){ c.strokeStyle = css('--accent'); c.lineWidth = 2; c.beginPath(); c.moveTo(24,Y(refRate)); c.lineTo(W-6,Y(refRate)); c.stroke(); }
   c.fillStyle = css('--pulse');
-  for(const r of rows){ if(r.breath_bpm === '' || r.breath_conf === 'Low') continue; c.beginPath(); c.arc(X(r.t_s), Y(+r.breath_bpm), 3, 0, 6.283); c.fill(); }
+  for(const h of hist){ if(h.bpm == null) continue; c.beginPath(); c.arc(X(h.t), Y(h.bpm), 3, 0, 6.283); c.fill(); }
 }
-
-const PHASE_LABEL = { baseline: 'Baseline (silent)', therapy: 'Therapy', post: 'After (silent)' };
-function updateUI(el, ph){
-  const total = BASE_S + cfg.therapySec + POST_S, left = Math.max(0, total - el);
-  $('phaseName').textContent = PHASE_LABEL[ph.name] || ''; $('clock').textContent = Math.floor(left/60) + ':' + String(Math.floor(left%60)).padStart(2,'0') + ' left';
-  $('prog').style.width = Math.min(100, el/total*100) + '%';
-  $('hr').textContent = fmt(live.hr);
-  const b = live.breath;
-  $('br').textContent = b && b.conf !== 'Low' ? b.bpm.toFixed(1) : '--';
-  $('brlab').textContent = b ? 'breaths/min (' + b.conf.toLowerCase() + ')' : 'breaths/min';
-  $('pace').textContent = therapyStarted && !therapyEnded && cfg.mode !== 'silence' ? rate.toFixed(1) : '--';
-  const L = live.long;
-  if(L){
-    $('hrv').textContent = fmt(L.rmssd); $('rise').textContent = fmt(L.riseMs);
-    $('notch').textContent = isFinite(L.notchFrac) ? Math.round(L.notchFrac*100) + '%' : '--';
-    $('pi').textContent = fmt(L.pi, 1); $('reg').textContent = fmt(L.ibiCV, 1);
-  }
-  $('mov').textContent = live.move || '--';
-  if(motionSeen) $('sensor').textContent = 'Motion sensor: recording.';
-  const warn = contactMessage();
-  let msg;
-  if(warn) msg = warn;
-  else if(ph.name === 'baseline') msg = 'Baseline: breathe naturally and keep still.';
-  else if(ph.name === 'therapy') msg = cfg.mode === 'silence' ? 'Control session: breathe naturally, no sound.' : ctrlState + '. Follow the sound: rising is in, falling is out.';
-  else msg = 'After: breathe naturally and keep still.';
-  $('status').textContent = msg; $('status').style.color = warn ? css('--warn') : css('--ink');
-  if(ph.name !== 'therapy' || cfg.mode === 'silence') drawOrb(null, ph.name === 'therapy' ? 'Breathe naturally' : 'Rest');
+function orbLoop(now){
+  if(!running) return;
+  const dt = (now - lastOrb)/1000; lastOrb = now;
+  const cv = $('orb'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
+  c.clearRect(0,0,W,H);
+  let r = 40, label = 'Breathe normally';
+  if(refRate){ refPhase += dt*refRate/60; const x = refPhase % 1; const L = x < 0.4 ? 0.5 - 0.5*Math.cos(Math.PI*x/0.4) : 0.5 + 0.5*Math.cos(Math.PI*(x-0.4)/0.6); r = 30 + 38*L; label = x < 0.4 ? 'In' : 'Out'; }
+  c.fillStyle = css('--soft'); c.beginPath(); c.arc(W/2,H/2,r,0,6.283); c.fill();
+  c.strokeStyle = css('--accent'); c.lineWidth = 3; c.beginPath(); c.arc(W/2,H/2,r,0,6.283); c.stroke();
+  c.fillStyle = css('--ink'); c.font = '600 15px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(label, W/2, H/2);
+  requestAnimationFrame(orbLoop);
 }
 
 function cleanup(){
-  running = false; clearInterval(timerSec); clearInterval(timerPace);
-  removeEventListener('devicemotion', onMotion);
-  try{ track && track.applyConstraints({ advanced: [{ torch: false }] }); }catch(e){}
-  stream && stream.getTracks().forEach(t => t.stop());
-  stopAudio();
+  running = false; clearInterval(timer);
+  try{ tgain && ctx && tgain.gain.setTargetAtTime(0, ctx.currentTime, 0.1); }catch(e){}
+  const c = ctx, o = osc, s = script, sn = srcNode, st = stream;
+  setTimeout(() => { try{ o && o.stop(); }catch(e){} try{ s && s.disconnect(); sn && sn.disconnect(); }catch(e){} try{ c && c.close(); }catch(e){} }, 500);
+  st && st.getTracks().forEach(t => t.stop());
+  ctx = osc = script = srcNode = stream = null;
 }
-
-function avg(rs, key, needOk){
-  const v = rs.filter(r => r[key] !== '' && (!needOk || r.breath_conf !== 'Low')).map(r => +r[key]);
-  return v.length >= 2 ? mean(v) : NaN;
-}
-function finishSession(complete){
-  cleanup(); $('live').hidden = true; $('results').hidden = false;
-  const sel = n => rows.filter(r => r.phase === n && r.phase_s >= 45);
-  const phases = [['Baseline', sel('baseline')], ['Therapy', sel('therapy')], ['After', sel('post')]];
-  const tb = $('resTable').querySelector('tbody'); tb.innerHTML = '';
-  const sums = {};
-  for(const [name, rs] of phases){
-    const s = { hr: avg(rs,'hr'), br: avg(rs,'breath_bpm',true), hrv: avg(rs,'rmssd'), notch: avg(rs,'notch_seen'), rise: avg(rs,'rise_ms') };
-    sums[name] = s;
-    const tr = document.createElement('tr');
-    [name, fmt(s.hr), fmt(s.br,1), fmt(s.hrv), isFinite(s.notch) ? Math.round(s.notch*100)+'%' : '--', fmt(s.rise)].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
-    tb.appendChild(tr);
-  }
-  const b = sums['Baseline'], a = sums['After'];
-  const d = (x,y,dp=0) => isFinite(x) && isFinite(y) ? ((y-x) > 0 ? '+' : '') + (y-x).toFixed(dp) : '--';
-  const dHR = d(b.hr,a.hr), dBR = d(b.br,a.br,1), dHRV = d(b.hrv,a.hrv);
-  $('resNote').textContent = complete ? 'Averages from the last 45 s of each phase onward, so early readings are excluded.' : 'Stopped early: some phases may have no data.';
-  $('delta').textContent = 'After vs baseline: heart rate ' + dHR + ' BPM, breathing ' + dBR + ' per min, HRV ' + dHRV + ' ms.';
-  history.push({ mode: cfg.mode, dHR, dBR, dHRV });
-  const hb = $('hist').querySelector('tbody'); hb.innerHTML = '';
-  const names = { mirror: 'Mirror, then lead', static: 'Static slow', silence: 'Silence' };
-  for(const h of history){ const tr = document.createElement('tr'); [names[h.mode], h.dHR, h.dBR, h.dHRV].forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); }); hb.appendChild(tr); }
-}
-
-$('go').addEventListener('click', startSession);
-$('stop').addEventListener('click', () => finishSession(false));
-$('again').addEventListener('click', () => { $('results').hidden = true; $('setup').hidden = false; });
-$('exp').addEventListener('click', () => {
-  if(!allRows.length) return;
-  const keys = Object.keys(allRows[0]);
-  const csv = [keys.join(',')].concat(allRows.map(r => keys.map(k => r[k]).join(','))).join('\n');
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'calm-sessions.csv'; a.click();
-});
+$('go').addEventListener('click', start);
+$('stop').addEventListener('click', () => { cleanup(); $('live').hidden = true; $('go').hidden = false; });
 </script>
 </body>
 </html>
