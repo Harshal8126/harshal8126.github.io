@@ -3,93 +3,144 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sonar breathing test</title>
+<title>Sonar lock test</title>
 <style>
 :root{
   --bg:#EDF1F2; --surface:#FFFFFF; --ink:#13242B; --muted:#586C75; --line:#C9D5D9;
-  --pulse:#C8283F; --accent:#0E6F7C; --soft:#9CCBD2; --ok:#1E7B4A; --warn:#9A5A08; --bad:#B3261E;
+  --pulse:#C8283F; --accent:#0E6F7C; --soft:#9CCBD2; --heart:#8A3FA0; --ok:#1E7B4A; --warn:#9A5A08; --bad:#B3261E;
 }
 @media (prefers-color-scheme: dark){
   :root{
     color-scheme: dark;
     --bg:#0F1A1F; --surface:#17262D; --ink:#E6EEF1; --muted:#9AB0B8; --line:#2B3F48;
-    --pulse:#FF6B7F; --accent:#4CC3D1; --soft:#2E6A73; --ok:#58C98A; --warn:#E8A84A; --bad:#FF8A80;
+    --pulse:#FF6B7F; --accent:#4CC3D1; --soft:#2E6A73; --heart:#D59AE6; --ok:#58C98A; --warn:#E8A84A; --bad:#FF8A80;
   }
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
 main{max-width:520px;margin:0 auto;padding:20px 16px 40px}
 h1{font-size:1.4rem;margin:0 0 4px;font-weight:650}
+h2{font-size:1rem;margin:0 0 8px}
 p.lead{margin:0 0 14px;color:var(--muted);font-size:.95rem}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-label{font-size:.82rem;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+label{font-size:.82rem;color:var(--muted);display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
 select,input[type=range]{font:inherit}
 select{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
-button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:14px 18px;cursor:pointer;width:100%;margin-top:12px;background:var(--accent);color:#fff}
-button.stop{background:var(--pulse)}
-@media (prefers-color-scheme: dark){ button{color:#06242A} button.stop{color:#2A0A10} }
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:14px 18px;cursor:pointer}
 button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.primary{width:100%;background:var(--accent);color:#fff;margin-top:8px}
+.ghost{width:100%;background:transparent;color:var(--accent);border:1px solid var(--accent);margin-top:8px;padding:12px 14px}
+.stopbtn{width:100%;background:var(--pulse);color:#fff;margin-top:8px}
+@media (prefers-color-scheme: dark){ .primary{color:#06242A} .stopbtn{color:#2A0A10} }
+.tap{width:100%;background:var(--soft);color:var(--ink);margin-top:12px;padding:22px 18px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .small{font-size:.82rem;color:var(--muted)}
-ul{margin:8px 0 0;padding-left:18px;font-size:.85rem;color:var(--muted)}
+.cap{font-size:.8rem;color:var(--muted);margin:6px 0 0}
+ul.tips,ol.tips{margin:10px 0 0;padding-left:18px;font-size:.86rem;color:var(--muted)}
 canvas{width:100%;display:block}
-#wave{height:120px} #chart{height:100px} #orb{height:140px}
-.big{display:flex;align-items:baseline;gap:8px}
-.big b{font-size:2.4rem;font-variant-numeric:tabular-nums}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
-.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px}
-.stat b{display:block;font-size:1.15rem;font-variant-numeric:tabular-nums}
-.stat span{font-size:.74rem;color:var(--muted)}
-#status{margin:8px 0 0;font-size:.9rem;min-height:2.4em}
+#trace{height:70px} #range{height:90px} #wave{height:90px} #chart{height:170px}
+.phase{display:flex;justify-content:space-between;align-items:center;font-weight:600}
+.pill{display:inline-block;padding:4px 10px;border-radius:999px;background:var(--line);color:var(--ink);font-size:.85rem}
+.pill.locked{background:var(--ok);color:#fff}
+.pill.lost,.pill.moving{background:var(--warn);color:#fff}
+@media (prefers-color-scheme: dark){ .pill.locked,.pill.lost,.pill.moving{color:#0F1A1F} }
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:0;background:var(--accent)}
+.msg{margin:8px 0 0;font-size:.9rem;min-height:2.4em}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px}
+.stat b{display:block;font-size:1.5rem;font-variant-numeric:tabular-nums}
+.stat span{font-size:.76rem;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:.8rem;margin-top:6px}
+th,td{text-align:left;padding:6px 3px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+th{color:var(--muted);font-weight:600}
 </style>
 </head>
 <body>
 <main>
-  <h1>Sonar breathing test</h1>
-  <p class="lead">Plays a near-silent high tone and listens to its echo from your chest. Breathing moves the chest and changes the echo. No camera, no contact.</p>
+  <h1>Sonar lock test</h1>
+  <p class="lead">Calibrates on your fingertip pulse, then follows your breathing from beside the bed using the soft sound it plays. Heart rate from sonar is experimental. Nothing touches you.</p>
 
-  <div class="panel">
-    <div class="grid">
-      <label>Tone frequency
-        <select id="freq"><option value="17000">17 kHz</option><option value="18000">18 kHz</option><option value="19000" selected>19 kHz</option><option value="20000">20 kHz</option></select>
-      </label>
-      <label>Reference pace (visual guide)
-        <select id="ref"><option value="0">Off</option><option value="6">6 / min</option><option value="8">8 / min</option><option value="10">10 / min</option><option value="12">12 / min</option><option value="15">15 / min</option></select>
-      </label>
-      <label style="grid-column:1 / -1">Tone level: <span id="lvlv">0.20</span>
-        <input id="lvl" type="range" min="0.05" max="0.5" step="0.05" value="0.2">
-      </label>
-    </div>
-    <button id="go">Start</button>
-    <ul>
-      <li>Lie or sit still in a quiet room with the phone 30-50 cm from your chest, resting on something solid, with the bottom edge (speaker and mic) pointing at you.</li>
-      <li>Do not talk. Keep nothing moving near the phone, such as a fan.</li>
-      <li>To check accuracy, pick a reference pace and follow the orb, or breathe at a steady count.</li>
-      <li>Some children, pets and a few adults can hear 17-18 kHz. Use 19-20 kHz and keep the level low.</li>
+  <section id="setup" class="panel">
+    <label>Sound level: <span id="lvlv">0.50</span>
+      <input id="lvl" type="range" min="0.1" max="1" step="0.05" value="0.5">
+    </label>
+    <label>Sonar hiss (the high, soft part of the sound that does the sensing)
+      <select id="hiss">
+        <option value="0.5">Soft</option>
+        <option value="1" selected>Medium</option>
+        <option value="1.8">Strong (better sensing)</option>
+      </select>
+    </label>
+    <button id="cal" class="primary">Calibrate with fingertip (60 s)</button>
+    <button id="skip" class="ghost">Skip calibration</button>
+    <ul class="tips">
+      <li>Turn on airplane mode first. The sensors and sound still work, and nothing is transmitted.</li>
+      <li>Calibration: rest one fingertip lightly on the rear camera and flash, and keep still.</li>
+      <li>Then place the phone 30-100 cm from your chest, bottom edge (speaker and mic) facing you, and lie still.</li>
+      <li>Keep the screen on. Phones often stop the microphone when the screen turns off.</li>
     </ul>
-  </div>
+  </section>
 
-  <div id="live" hidden>
+  <section id="calib" class="panel" hidden>
+    <div class="phase"><span id="calTitle">Calibrating</span><span id="calClock"></span></div>
+    <div class="bar"><i id="calProg"></i></div>
+    <canvas id="trace"></canvas>
+    <p class="msg" id="calStatus"></p>
+    <div class="stats">
+      <div class="stat"><b id="calHr">--</b><span>heart rate, BPM</span></div>
+      <div class="stat"><b id="calSig">--</b><span>camera signal</span></div>
+    </div>
+    <button id="calCancel" class="ghost">Cancel</button>
+  </section>
+
+  <section id="place" class="panel" hidden>
+    <h2>Place the phone</h2>
+    <p id="calResult" class="small"></p>
+    <ol class="tips">
+      <li>Put the phone on the bed or a bedside table, 30-100 cm from your chest.</li>
+      <li>Point its bottom edge, where the speaker and mic are, at your chest.</li>
+      <li>Lie still and breathe normally. Tracking starts after 8 seconds.</li>
+    </ol>
+    <button id="startSonar" class="primary">Start sonar</button>
+  </section>
+
+  <section id="track" hidden>
     <div class="panel">
-      <div class="big"><b id="bpm">--</b><span>breaths per min</span><span class="small" id="conf"></span></div>
-      <p id="status"></p>
-      <canvas id="orb"></canvas>
+      <div class="phase"><span id="stateTxt" class="pill">Starting</span><span id="clock">0:00</span></div>
+      <p class="msg" id="trackMsg"></p>
     </div>
     <div class="stats">
-      <div class="stat"><b id="tone">--</b><span>tone received</span></div>
-      <div class="stat"><b id="src">--</b><span>signal used</span></div>
-      <div class="stat"><b id="aec">--</b><span>echo cancel</span></div>
+      <div class="stat"><b id="sBr">--</b><span id="sBrLab">breaths/min (sonar)</span></div>
+      <div class="stat"><b id="sHr">--</b><span id="sHrLab">heart BPM (sonar, experimental)</span></div>
+      <div class="stat"><b id="sDist">--</b><span>distance to you, cm</span></div>
+      <div class="stat"><b id="sTap">--</b><span>breaths/min from your taps</span></div>
+      <div class="stat"><b id="sBr0">--</b><span>calibration breaths/min</span></div>
+      <div class="stat"><b id="sHr0">--</b><span>calibration heart BPM</span></div>
     </div>
-    <div class="panel"><canvas id="wave"></canvas><p class="small" style="margin:6px 0 0">Echo signal, last 30 s. A smooth wave, one hump per breath, is what you want. Hold your breath for 10 s and it should flatten.</p></div>
-    <div class="panel"><canvas id="chart"></canvas><p class="small" style="margin:6px 0 0">Estimated breaths per minute over time (dots). The line is the reference pace, if set.</p></div>
-    <button id="stop" class="stop">Stop</button>
-  </div>
+    <div class="panel"><canvas id="range"></canvas><p class="cap">Motion by distance from the phone (15-150 cm). The marker shows where you were found.</p></div>
+    <div class="panel"><canvas id="wave"></canvas><p class="cap">Breathing wave at that distance, last 25 s.</p></div>
+    <div class="panel"><canvas id="chart"></canvas><p class="cap">Top: breathing (dots), your taps (rings), calibration (line). Bottom: sonar heart rate (dots), fingertip checks (rings).</p></div>
+    <button id="tapBtn" class="tap">Tap on each inhale (optional accuracy check)</button>
+    <div class="row2"><button id="fcheck" class="ghost">Fingertip check (45 s)</button><button id="stop" class="stopbtn">Stop</button></div>
+    <p class="small" id="diag"></p>
+  </section>
 
-  <p class="small" style="margin-top:16px">Research tool, not a medical device. It measures breathing and gross movement only, not heartbeat. Results depend a lot on the phone model.</p>
+  <section id="results" class="panel" hidden>
+    <h2>Results</h2>
+    <p class="small" id="resNote"></p>
+    <table id="cmp"><thead><tr><th>Check</th><th>Sonar breath</th><th>Reference breath</th><th>Sonar heart</th><th>Finger heart</th></tr></thead><tbody></tbody></table>
+    <button id="exp" class="ghost">Download CSV</button>
+    <button id="again" class="primary">New session</button>
+  </section>
+
+  <p class="small" style="margin-top:16px">Research tool, not a medical device. Sonar breathing is usually reliable within about 1-1.5 m. Sonar heart rate is shown only when its signal is strong, and may often read "not detected".</p>
 </main>
 
 <script>
 //DSP-START
+const FS = 30; // camera analysis rate (Hz)
+
 function movAvg(x, w){
   const n = x.length, out = new Float64Array(n), h = Math.floor(w/2);
   const pre = new Float64Array(n+1);
@@ -98,8 +149,88 @@ function movAvg(x, w){
   return out;
 }
 function mean(a){ let s=0; for(const v of a) s+=v; return a.length? s/a.length : NaN; }
+function sd(a){ const m=mean(a); let s=0; for(const v of a) s+=(v-m)*(v-m); return a.length>1? Math.sqrt(s/(a.length-1)) : NaN; }
+function median(a){ const b=[...a].sort((p,q)=>p-q), n=b.length; return n? (n%2? b[(n-1)/2] : (b[n/2-1]+b[n/2])/2) : NaN; }
+function nextPow2(n){ let p = 1; while(p < n) p <<= 1; return p; }
+function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
-// Strongest slow rhythm (0.08-0.5 Hz = 4.8-30 breaths/min) and how much it stands out from the rest
+function resampleUniform(ts, vs, fs){
+  if(ts.length < 2) return new Float64Array(0);
+  const t0 = ts[0], tEnd = ts[ts.length-1];
+  const n = Math.floor((tEnd - t0)/1000*fs);
+  const out = new Float64Array(Math.max(0,n));
+  let j = 0;
+  for(let i=0;i<n;i++){
+    const t = t0 + i*1000/fs;
+    while(j < ts.length-2 && ts[j+1] < t) j++;
+    const f = Math.max(0, Math.min(1, (t - ts[j])/((ts[j+1] - ts[j]) || 1)));
+    out[i] = vs[j] + (vs[j+1] - vs[j])*f;
+  }
+  return out;
+}
+
+// In-place radix-2 FFT. inv = true gives the inverse (scaled by 1/n).
+function fft(re, im, inv){
+  const n = re.length;
+  for(let i=1, j=0; i<n; i++){
+    let bit = n >> 1;
+    for(; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if(i < j){ let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for(let len=2; len<=n; len<<=1){
+    const ang = 2*Math.PI/len*(inv ? 1 : -1), wr = Math.cos(ang), wi = Math.sin(ang), h = len >> 1;
+    for(let i=0;i<n;i+=len){
+      let cr = 1, ci = 0;
+      for(let j=0;j<h;j++){
+        const a = i+j, b = a+h;
+        const br = re[b]*cr - im[b]*ci, bi = re[b]*ci + im[b]*cr;
+        re[b] = re[a] - br; im[b] = im[a] - bi; re[a] += br; im[a] += bi;
+        const t = cr*wr - ci*wi; ci = cr*wi + ci*wr; cr = t;
+      }
+    }
+  }
+  if(inv) for(let i=0;i<n;i++){ re[i] /= n; im[i] /= n; }
+}
+
+function detrend(a){
+  const n = a.length; let sx=0, sy=0, sxx=0, sxy=0;
+  for(let i=0;i<n;i++){ sx+=i; sy+=a[i]; sxx+=i*i; sxy+=i*a[i]; }
+  const slope = (n*sxy - sx*sy)/(n*sxx - sx*sx), icpt = (sy - slope*sx)/n;
+  const o = new Float64Array(n); for(let i=0;i<n;i++) o[i] = a[i] - (icpt + slope*i); return o;
+}
+
+// Strongest rhythm between f1 and f2 (Hz) using a zero-padded FFT.
+// opt.g1/g2 limit where the peak may be (a gate); prominence is always measured against the whole band.
+function bandPeak(x, fs, f1, f2, opt = {}){
+  const n = x.length; if(n < 16) return null;
+  const nfft = opt.nfft || nextPow2(Math.max(1024, 4*n));
+  const re = new Float64Array(nfft), im = new Float64Array(nfft);
+  let sx=0, sy=0, sxx=0, sxy=0;
+  for(let i=0;i<n;i++){ sx+=i; sy+=x[i]; sxx+=i*i; sxy+=i*x[i]; }
+  const sl = (n*sxy - sx*sy)/(n*sxx - sx*sx), ic = (sy - sl*sx)/n;
+  for(let i=0;i<n;i++) re[i] = (x[i] - (ic + sl*i))*(0.5 - 0.5*Math.cos(2*Math.PI*i/(n-1)));
+  fft(re, im, false);
+  const df = fs/nfft, k1 = Math.max(1, Math.ceil(f1/df)), k2 = Math.min(nfft/2-2, Math.floor(f2/df));
+  if(k2 - k1 < 8) return null;
+  const pw = new Float64Array(k2 - k1 + 1);
+  for(let k=k1;k<=k2;k++) pw[k-k1] = re[k]*re[k] + im[k]*im[k];
+  const edge = Math.max(2, Math.round(0.015/df));
+  const g1 = Math.max(k1 + edge, opt.g1 != null ? Math.ceil(opt.g1/df) : 0);
+  const g2 = Math.min(k2 - 1, opt.g2 != null ? Math.floor(opt.g2/df) : k2);
+  let pk = -1;
+  for(let k=g1;k<=g2;k++){ const i = k-k1; if(pw[i] >= pw[i-1] && pw[i] >= pw[i+1] && (pk < 0 || pw[i] > pw[pk-k1])) pk = k; }
+  if(pk < 0) return null;
+  const ex = Math.max(opt.excl || 0.025, 2*fs/n)/df; // at least the Hann main lobe
+  let s = 0, c = 0;
+  for(let k=k1;k<=k2;k++) if(Math.abs(k-pk) > ex){ s += pw[k-k1]; c++; }
+  if(c < 4 || !(s > 0)) return null;
+  const i = pk - k1, a = pw[i-1], b = pw[i], cc = pw[i+1], den = a - 2*b + cc;
+  const f = (pk + (den !== 0 ? 0.5*(a - cc)/den : 0))*df;
+  return { f, bpm: f*60, prom: b/(s/c) };
+}
+
+// Strongest slow rhythm (0.08-0.5 Hz) for the camera pulse signal
 function spectralPeak(a0, fs, f1=0.08, f2=0.5){
   if(a0.length < fs*20) return null;
   let a = a0, f = fs;
@@ -121,8 +252,6 @@ function spectralPeak(a0, fs, f1=0.08, f2=0.5){
     for(let i=0;i<n;i++){ re += w[i]*Math.cos(om*i); im += w[i]*Math.sin(om*i); }
     fr.push(q); pw.push(re*re + im*im);
   }
-  // slow drifts and sway make the spectrum rise steadily toward the lowest frequencies. A real
-  // breathing rhythm is a local peak, so only local peaks away from the band edge are considered.
   let pi = -1;
   for(let i=3;i<pw.length-1;i++) if(pw[i] >= pw[i-1] && pw[i] >= pw[i+1] && (pi < 0 || pw[i] > pw[pi])) pi = i;
   if(pi < 0) return null;
@@ -131,6 +260,110 @@ function spectralPeak(a0, fs, f1=0.08, f2=0.5){
   const floor = c ? s/c : NaN;
   if(!(floor > 0)) return null;
   return { f: fr[pi], bpm: fr[pi]*60, prom: pw[pi]/floor };
+}
+
+// Fits a circle to the I/Q path (centre = fixed echoes) and returns the unwrapped angle around it,
+// which follows chest displacement linearly even when the motion wraps the phase.
+function circleAngle(I, Q){
+  const n = I.length, mx = mean(I), my = mean(Q);
+  let Suu=0, Suv=0, Svv=0, Su=0, Sv=0, Suz=0, Svz=0, Sz=0;
+  for(let i=0;i<n;i++){
+    const u = I[i]-mx, v = Q[i]-my, zz = u*u + v*v;
+    Suu += u*u; Suv += u*v; Svv += v*v; Su += u; Sv += v; Suz += u*zz; Svz += v*zz; Sz += zz;
+  }
+  const M = [[Suu,Suv,Su],[Suv,Svv,Sv],[Su,Sv,n]], r = [Suz,Svz,Sz];
+  const det3 = m => m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1]) - m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0]) + m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+  const D = det3(M);
+  if(!isFinite(D) || Math.abs(D) < 1e-300) return null;
+  const col = k => M.map((row,i) => row.map((v,j) => j === k ? r[i] : v));
+  const cx = det3(col(0))/D/2, cy = det3(col(1))/D/2;
+  if(!isFinite(cx) || !isFinite(cy)) return null;
+  const th = new Float64Array(n);
+  let prev = 0;
+  for(let i=0;i<n;i++){
+    let a = Math.atan2(Q[i]-my-cy, I[i]-mx-cx);
+    if(i){ while(a - prev > Math.PI) a -= 2*Math.PI; while(a - prev < -Math.PI) a += 2*Math.PI; }
+    th[i] = a; prev = a;
+  }
+  return th;
+}
+
+// Least-squares removal of the breathing fundamental and its harmonics (plus a line)
+function removeHarmonics(x, fs, fb, H){
+  const n = x.length, K = 2 + 2*H, B = [];
+  for(let i=0;i<n;i++){
+    const t = i/fs, row = [1, i/n];
+    for(let h=1;h<=H;h++){ const a = 2*Math.PI*h*fb*t; row.push(Math.cos(a), Math.sin(a)); }
+    B.push(row);
+  }
+  const A = Array.from({length:K}, () => new Float64Array(K+1));
+  for(let i=0;i<n;i++){ const r = B[i]; for(let p=0;p<K;p++){ const rp = r[p]; for(let q=0;q<K;q++) A[p][q] += rp*r[q]; A[p][K] += rp*x[i]; } }
+  for(let p=0;p<K;p++) A[p][p] += 1e-9*(A[p][p] + 1);
+  for(let c=0;c<K;c++){
+    let piv = c; for(let r=c+1;r<K;r++) if(Math.abs(A[r][c]) > Math.abs(A[piv][c])) piv = r;
+    [A[c], A[piv]] = [A[piv], A[c]];
+    const d = A[c][c]; if(Math.abs(d) < 1e-300) continue;
+    for(let r=0;r<K;r++){ if(r === c) continue; const f = A[r][c]/d; if(f) for(let q=c;q<=K;q++) A[r][q] -= f*A[c][q]; }
+  }
+  const coef = A.map((row,i) => Math.abs(row[i]) > 1e-300 ? row[K]/row[i] : 0);
+  const out = new Float64Array(n);
+  for(let i=0;i<n;i++){ let s = 0; for(let p=0;p<K;p++) s += coef[p]*B[i][p]; out[i] = x[i] - s; }
+  return out;
+}
+
+// ---------- camera pulse (calibration) ----------
+function analyzePPG(seg){
+  if(seg.length < FS*4) return null;
+  const x = resampleUniform(seg.map(s=>s.t), seg.map(s=>s.v), FS);
+  const n = x.length;
+  if(n < FS*4) return null;
+  const t0 = seg[0].t;
+  const base = movAvg(x, FS+1);
+  const hp = new Float64Array(n);
+  for(let i=0;i<n;i++) hp[i] = x[i] - base[i];
+  const lp = movAvg(hp, 5);
+  const s = new Float64Array(n);
+  for(let i=0;i<n;i++) s[i] = -lp[i];
+  const sdS = sd(s);
+  const peaks = [], minDist = Math.round(0.33*FS), edge = FS;
+  for(let i=edge;i<n-edge;i++){
+    if(s[i] > s[i-1] && s[i] >= s[i+1] && s[i] > 0.25*sdS){
+      const denom = s[i-1] - 2*s[i] + s[i+1];
+      const idx = i + (denom !== 0 ? 0.5*(s[i-1]-s[i+1])/denom : 0);
+      if(peaks.length && (idx - peaks[peaks.length-1]) < minDist){
+        const li = Math.round(peaks[peaks.length-1]);
+        if(s[i] > s[li]) peaks[peaks.length-1] = idx;
+      } else peaks.push(idx);
+    }
+  }
+  const ibi = [];
+  for(let k=1;k<peaks.length;k++) ibi.push((peaks[k]-peaks[k-1])/FS);
+  const med = median(ibi.filter(v => v>=0.33 && v<=1.5));
+  const ok = ibi.map(v => v>=0.33 && v<=1.5 && Math.abs(v-med) <= 0.3*med);
+  const good = ibi.filter((v,k)=>ok[k]);
+  const hr = good.length ? 60/mean(good) : NaN;
+  const bt = [], bAmp = [], bIbi = [];
+  for(let k=1;k<peaks.length;k++){
+    if(!ok[k-1]) continue;
+    const p0 = Math.round(peaks[k-1]), p1 = Math.round(peaks[k]);
+    let m1 = s[p0]; for(let i=p0;i<=p1;i++) if(s[i] < m1) m1 = s[i];
+    const amp = s[p1] - m1; if(!(amp > 0)) continue;
+    bt.push(t0 + peaks[k]*1000/FS); bAmp.push(amp); bIbi.push(ibi[k-1]);
+  }
+  return { s, peaks, hr, base, bt, bAmp, bIbi, beats: good.length, quality: good.length < 5 ? 0 : good.length/ibi.length };
+}
+function qualityLabel(q){ return q >= 0.85 ? 'Good' : q >= 0.65 ? 'Fair' : 'Poor'; }
+function breathCandidates(res){
+  const out = [];
+  const b = spectralPeak(res.base, FS);
+  if(b) out.push({ src: 'Pulse baseline', bpm: b.bpm, prom: b.prom });
+  if(res.bt.length >= 20){
+    const a = spectralPeak(resampleUniform(res.bt, res.bAmp, 4), 4);
+    if(a) out.push({ src: 'Pulse size', bpm: a.bpm, prom: a.prom });
+    const r = spectralPeak(resampleUniform(res.bt, res.bIbi, 4), 4);
+    if(r) out.push({ src: 'Beat spacing', bpm: r.bpm, prom: r.prom });
+  }
+  return out;
 }
 function fuseBreath(c){
   const v = c.filter(Boolean).sort((a,b)=>b.prom-a.prom);
@@ -143,205 +376,596 @@ function fuseBreath(c){
   return { bpm: best.bpm, src: best.src, conf, prom: best.prom };
 }
 
-// Mixes the microphone signal down against the tone: output is one [I, Q] point every 50 ms
-function makeDemod(fs, f0){
-  const B = Math.round(fs*0.05), w = 2*Math.PI*f0/fs;
-  let n = 0, cnt = 0, I = 0, Q = 0;
-  return { B, rate: fs/B, push(buf, out){
-    for(let i=0;i<buf.length;i++){
-      const x = buf[i], ph = w*n;
-      I += x*Math.cos(ph); Q += x*Math.sin(ph); n++; cnt++;
-      if(cnt === B){ out.push([2*I/B, 2*Q/B]); I = 0; Q = 0; cnt = 0; }
+// ---------- sound design ----------
+function bandWeight(f, lo, hi, edge){
+  if(f <= lo - edge/2 || f >= hi + edge/2) return 0;
+  if(f < lo + edge/2) return 0.5 - 0.5*Math.cos(Math.PI*(f - (lo - edge/2))/edge);
+  if(f > hi - edge/2) return 0.5 + 0.5*Math.cos(Math.PI*(f - (hi - edge/2))/edge);
+  return 1;
+}
+// Sonar hiss: flat noise from 6 to 18 kHz that repeats exactly every P samples. Because it repeats,
+// its echoes from still objects look identical every frame and can be removed, leaving only motion.
+function makeProbe(sr, P, seed){
+  const rnd = mulberry32(seed), re = new Float64Array(P), im = new Float64Array(P);
+  const refRe = new Float64Array(P), refIm = new Float64Array(P), bins = [];
+  const lo = 6000, hi = Math.min(18000, 0.4*sr);
+  for(let k=1;k<P/2;k++){
+    const w = bandWeight(k*sr/P, lo, hi, 1000);
+    if(w <= 0) continue;
+    const ph = 2*Math.PI*rnd();
+    re[k] = w*Math.cos(ph); im[k] = w*Math.sin(ph);
+    re[P-k] = re[k]; im[P-k] = -im[k];
+    refRe[k] = re[k]; refIm[k] = -im[k];
+    bins.push(k);
+  }
+  fft(re, im, true);
+  let s = 0; for(let i=0;i<P;i++) s += re[i]*re[i];
+  const g = 1/Math.sqrt(s/P), x = new Float32Array(P);
+  for(let i=0;i<P;i++) x[i] = re[i]*g;
+  return { x, refRe, refIm, bins: Int32Array.from(bins) };
+}
+// Calming bed: long, non-repeating pink noise below 5.5 kHz (it does not overlap the sonar band)
+function makeBed(sr, N, seed){
+  const rnd = mulberry32(seed), re = new Float64Array(N), im = new Float64Array(N);
+  for(let k=1;k<N/2;k++){
+    const f = k*sr/N, w = bandWeight(f, 120, 5000, 200)/Math.sqrt(Math.max(f, 60)/1000);
+    if(w <= 0) continue;
+    const ph = 2*Math.PI*rnd();
+    re[k] = w*Math.cos(ph); im[k] = w*Math.sin(ph); re[N-k] = re[k]; im[N-k] = -im[k];
+  }
+  fft(re, im, true);
+  let s = 0; for(let i=0;i<N;i++) s += re[i]*re[i];
+  const g = 1/Math.sqrt(s/N), x = new Float32Array(N);
+  for(let i=0;i<N;i++) x[i] = re[i]*g;
+  // short crossfade so the loop point is seamless
+  const L = Math.round(0.05*sr);
+  for(let i=0;i<L;i++){ const a = i/L; x[i] = x[i]*a + x[N-L+i]*(1-a); }
+  return x.subarray(0, N-L);
+}
+
+// ---------- sonar engine ----------
+const LOCK_PROM = 25, TRACK_PROM = 10, E_MIN = 3, HPROM = 12;
+class SonarEngine{
+  constructor(sr, seed=7){
+    this.sr = sr; this.P = 16384; this.hop = 4096; this.G = 48;
+    this.cm = 34300/(2*sr);                          // cm of distance per tap
+    this.M = this.G + Math.ceil(160/this.cm);        // taps out to 1.6 m
+    this.fr = sr/this.hop;                           // frames per second
+    this.T = Math.ceil(46*this.fr);
+    const pr = makeProbe(sr, this.P, seed);
+    this.probe = pr.x; this.refRe = pr.refRe; this.refIm = pr.refIm; this.bins = pr.bins;
+    this.RB = 1 << 18; this.ring = new Float32Array(this.RB); this.w = 0;
+    this.dd = null; this.next = 0; this.alignAt = Infinity;
+    this.sr_ = new Float32Array(this.T*this.M); this.si_ = new Float32Array(this.T*this.M);
+    this.n = 0; this.validFrom = 0;
+    this.bRe = new Float64Array(this.P); this.bIm = new Float64Array(this.P);
+    this.drift = 0; this.realigns = 0; this.directLevel = 0;
+    this.tMin = this.G + Math.round(15/this.cm); this.tMax = Math.min(this.M - 8, this.G + Math.round(150/this.cm));
+    this.state = 'waiting'; this.lockTap = -1; this.kx = NaN; this.kP = 0; this.miss = 0; this.lastN = 0;
+    this.br0 = null; this.hr0 = null; this.kxLast = null; this.lastProm = 0; this.sig = null; this.energyMap = null;
+    this.mvBase = []; this.hk = NaN; this.hP = 0; this.hShow = false; this.hProm = 0; this.hCand = NaN; this.hAcc = []; this.hMiss = 0;
+  }
+  setPrior(br0, hr0){ this.br0 = br0 || null; this.hr0 = hr0 || null; }
+  pushMic(buf){ const m = this.RB - 1; for(let i=0;i<buf.length;i++) this.ring[(this.w + i) & m] = buf[i]; this.w += buf.length; }
+  beginAlign(){ if(this.state === 'waiting'){ this.alignAt = this.w + Math.round(0.5*this.sr); this.state = 'aligning'; } }
+
+  // Complex echo profile (impulse response) for the P samples starting at s, assuming the
+  // played hiss lines up with offset q. Result is left in bRe/bIm (index = delay in samples).
+  cir(s, q){
+    const P = this.P, m = this.RB - 1, re = this.bRe, im = this.bIm;
+    for(let i=0;i<P;i++){ re[i] = this.ring[(s + i) & m]; im[i] = 0; }
+    fft(re, im, false);
+    const yr = this.yr || (this.yr = new Float64Array(P)), yi = this.yi || (this.yi = new Float64Array(P));
+    yr.set(re); yi.set(im); re.fill(0); im.fill(0);
+    for(const k of this.bins){
+      const a = -2*Math.PI*k*q/P, c = Math.cos(a), sn = Math.sin(a);
+      const rr = this.refRe[k]*c - this.refIm[k]*sn, ri = this.refRe[k]*sn + this.refIm[k]*c;
+      re[k] = yr[k]*rr - yi[k]*ri; im[k] = yr[k]*ri + yi[k]*rr;
     }
-  }};
-}
-function detrend(a){
-  const n = a.length; let sx=0, sy=0, sxx=0, sxy=0;
-  for(let i=0;i<n;i++){ sx+=i; sy+=a[i]; sxx+=i*i; sxy+=i*a[i]; }
-  const slope = (n*sxy - sx*sy)/(n*sxx - sx*sx), icpt = (sy - slope*sx)/n;
-  const o = new Float64Array(n); for(let i=0;i<n;i++) o[i] = a[i] - (icpt + slope*i); return o;
-}
-// Fits a circle to the I/Q path (its centre is the fixed direct sound) and returns the unwrapped angle
-// of the echo around that centre. The angle follows chest displacement linearly, so it keeps the true
-// breathing rate even when the chest moves far enough to wrap the phase (4 mm at 19 kHz is over 2 radians).
-function circleAngle(I, Q){
-  const n = I.length, mx = mean(I), my = mean(Q);
-  let Suu=0, Suv=0, Svv=0, Su=0, Sv=0, Suz=0, Svz=0, Sz=0;
-  for(let i=0;i<n;i++){
-    const u = I[i]-mx, v = Q[i]-my, zz = u*u + v*v;
-    Suu += u*u; Suv += u*v; Svv += v*v; Su += u; Sv += v; Suz += u*zz; Svz += v*zz; Sz += zz;
+    fft(re, im, true);
   }
-  const M = [[Suu,Suv,Su],[Suv,Svv,Sv],[Su,Sv,n]], r = [Suz,Svz,Sz];
-  const det3 = m => m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1]) - m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0]) + m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
-  const D = det3(M);
-  if(!isFinite(D) || Math.abs(D) < 1e-30) return null;
-  const col = k => M.map((row,i) => row.map((v,j) => j === k ? r[i] : v));
-  const cx = det3(col(0))/D/2, cy = det3(col(1))/D/2;
-  const th = new Float64Array(n);
-  let prev = 0;
-  for(let i=0;i<n;i++){
-    let a = Math.atan2(Q[i]-my-cy, I[i]-mx-cx);
-    if(i){ while(a - prev > Math.PI) a -= 2*Math.PI; while(a - prev < -Math.PI) a += 2*Math.PI; }
-    th[i] = a; prev = a;
+  process(){
+    if(this.state === 'waiting') return 0;
+    const P = this.P;
+    if(this.dd === null){
+      if(this.w < this.alignAt + P) return 0;
+      const s0 = this.w - P;
+      this.cir(s0, 0);
+      let j0 = 0, best = -1;
+      for(let j=0;j<P;j++){ const v = this.bRe[j]*this.bRe[j] + this.bIm[j]*this.bIm[j]; if(v > best){ best = v; j0 = j; } }
+      this.dd = ((s0 + j0) % P + P) % P;
+      this.next = s0; this.state = 'search';
+    }
+    let made = 0;
+    while(this.w >= this.next + P){
+      if(this.w - this.next > this.RB - P) this.next = this.w - P;
+      this.frame(this.next); this.next += this.hop; made++;
+    }
+    return made;
   }
-  return th;
-}
-// z: [[I,Q], ...] at `rate` Hz. Breathing moves the chest, which swings the echo around the fixed direct sound.
-function sonarAnalyze(z, rate){
-  const n = z.length;
-  if(n < rate*20) return null;
-  const Ir = Float64Array.from(z, p => p[0]), Qr = Float64Array.from(z, p => p[1]);
-  const I = detrend(Ir), Q = detrend(Qr);
-  const mag = detrend(Float64Array.from(z, p => Math.hypot(p[0], p[1])));
-  let cxx=0, cyy=0, cxy=0;
-  for(let i=0;i<n;i++){ cxx += I[i]*I[i]; cyy += Q[i]*Q[i]; cxy += I[i]*Q[i]; }
-  const ang = 0.5*Math.atan2(2*cxy, cxx - cyy), ca = Math.cos(ang), sa = Math.sin(ang);
-  const proj = new Float64Array(n);
-  for(let i=0;i<n;i++) proj[i] = I[i]*ca + Q[i]*sa;
-  const cands = [];
-  let wave = proj, angleCand = null;
-  const th = circleAngle(Ir, Qr);
-  if(th){
-    const p0 = spectralPeak(th, rate);
-    if(p0){ angleCand = { src: 'Echo angle', bpm: p0.bpm, prom: p0.prom }; cands.push(angleCand); }
+  frame(s){
+    const P = this.P, G = this.G, M = this.M;
+    const q = (((s - this.dd) % P) + P) % P;
+    this.cir(s, q);
+    const R = this.bRe, I = this.bIm, ix = t => ((t - G) % P + P) % P;
+    let bt = G, bm = -1;
+    for(let t=G-3;t<=G+3;t++){ const j = ix(t), v = R[j]*R[j] + I[j]*I[j]; if(v > bm){ bm = v; bt = t; } }
+    if(bt !== G){
+      if(++this.drift >= 8){ this.dd = ((this.dd + (bt - G)) % P + P) % P; this.drift = 0; this.realigns++; this.n = 0; this.validFrom = 0; if(this.state === 'locked'){ this.state = 'lost'; this.kxLast = this.kx; } }
+      return;
+    }
+    this.drift = 0;
+    const dr = R[ix(G)], di = I[ix(G)], dm = dr*dr + di*di;
+    if(!(dm > 0)) return;
+    this.directLevel = Math.sqrt(dm);
+    const row = (this.n % this.T)*M;
+    for(let t=0;t<M;t++){
+      const j = ix(t), a = R[j], b = I[j];
+      this.sr_[row+t] = (a*dr + b*di)/dm; this.si_[row+t] = (b*dr - a*di)/dm; // divide by the direct path
+    }
+    this.n++;
   }
-  const p1 = spectralPeak(proj, rate); if(p1) cands.push({ src: 'Echo phase', bpm: p1.bpm, prom: p1.prom });
-  const p2 = spectralPeak(mag, rate);  if(p2) cands.push({ src: 'Echo strength', bpm: p2.bpm, prom: p2.prom });
-  // the angle follows the chest linearly, so prefer it when it shows a clear rhythm; the other
-  // signals can lock onto a harmonic (double the true rate) when the chest moves a lot
-  let fused;
-  if(angleCand && angleCand.prom >= 15){
-    fused = { bpm: angleCand.bpm, src: angleCand.src, conf: angleCand.prom >= 30 ? 'High' : 'Medium', prom: angleCand.prom };
-    wave = detrend(th);
-  } else {
-    fused = fuseBreath(cands);
-    // without a clear angle rhythm, a single weak candidate is not trusted: only agreement or a very strong peak counts
-    if(fused && fused.conf === 'Medium') fused.conf = 'Low';
+  avail(){ return Math.min(this.n - this.validFrom, this.T); }
+  series(t, nf){
+    const n = Math.min(nf, this.avail()), I = new Float64Array(n), Q = new Float64Array(n);
+    for(let i=0;i<n;i++){ const f = ((this.n - n + i) % this.T)*this.M + t; I[i] = this.sr_[f]; Q[i] = this.si_[f]; }
+    return { I, Q, n };
   }
-  return { proj: wave, mag, cands, fused };
-}
-function toneStrengthDb(z, zr){
-  const k = Math.min(z.length, zr.length, 20);
-  if(k < 5) return NaN;
-  let a = 0, b = 0;
-  for(let i=1;i<=k;i++){ a += Math.hypot(z[z.length-i][0], z[z.length-i][1]); b += Math.hypot(zr[zr.length-i][0], zr[zr.length-i][1]); }
-  return 20*Math.log10((a/k)/((b/k) + 1e-9));
+  // Breathing rhythm at one distance (tap)
+  tapBreath(t, nf, g1, g2, nfft){
+    const { I, Q, n } = this.series(t, nf);
+    if(n < this.fr*15) return null;
+    const dI = detrend(I), dQ = detrend(Q);
+    let e = 0, cxx = 0, cyy = 0, cxy = 0;
+    for(let i=0;i<n;i++){ e += dI[i]*dI[i] + dQ[i]*dQ[i]; cxx += dI[i]*dI[i]; cyy += dQ[i]*dQ[i]; cxy += dI[i]*dQ[i]; }
+    e /= n;
+    const ang = 0.5*Math.atan2(2*cxy, cxx - cyy), ca = Math.cos(ang), sa = Math.sin(ang);
+    const proj = new Float64Array(n); for(let i=0;i<n;i++) proj[i] = dI[i]*ca + dQ[i]*sa;
+    const opt = { g1, g2, nfft, excl: 0.025 };
+    let best = null;
+    const p2 = bandPeak(proj, this.fr, 0.08, 0.6, opt);
+    if(p2) best = { bpm: p2.bpm, prom: p2.prom, sig: proj, src: 'phase' };
+    const th = circleAngle(I, Q);
+    if(th){ const dth = detrend(th); const p1 = bandPeak(dth, this.fr, 0.08, 0.6, opt); if(p1 && (!best || p1.prom > best.prom)) best = { bpm: p1.bpm, prom: p1.prom, sig: dth, src: 'angle' }; }
+    return Object.assign(best || { bpm: NaN, prom: 0, sig: null, src: '' }, { t, energy: e });
+  }
+  search(){
+    const nf = Math.round(25*this.fr), res = [];
+    for(let t=this.tMin;t<=this.tMax;t+=2){ const r = this.tapBreath(t, nf, null, null, 1024); if(r) res.push(r); }
+    if(!res.length) return null;
+    const med = median(res.map(r => r.energy)) || 1e-30;
+    const prior = this.state === 'lost' && this.kxLast ? this.kxLast : this.br0;
+    const score = r => {
+      if(!(r.prom > 0)) return 0;
+      let w = 1;
+      if(prior){ const sg = Math.max(2.5, 0.35*prior); w = 0.35 + 0.65*Math.exp(-0.5*((r.bpm - prior)/sg)**2); }
+      return r.prom*w*(r.energy/med >= E_MIN ? 1 : 0.2);
+    };
+    let b = res[0]; for(const r of res) if(score(r) > score(b)) b = r;
+    for(let t=b.t-1;t<=b.t+1;t+=2){ const r = this.tapBreath(t, nf, null, null, 2048); if(r && score(r) > score(b)) b = r; }
+    const bb = this.tapBreath(b.t, nf, null, null, 2048) || b;
+    bb.eRatio = bb.energy/med;
+    return bb;
+  }
+  // Large body movement: short-term change across all distances jumps far above its usual level
+  motion(){
+    const nS = Math.round(1.2*this.fr), nL = Math.round(10*this.fr);
+    const av = this.avail(); if(av < nS + 2) return { moving: false };
+    let S = 0; const map = [];
+    for(let t=this.tMin;t<=this.tMax;t+=2){
+      const { I, Q } = this.series(t, Math.min(nL, av));
+      const n = I.length; let mI = 0, mQ = 0; for(let i=0;i<n;i++){ mI += I[i]; mQ += Q[i]; } mI /= n; mQ /= n;
+      let vL = 0; for(let i=0;i<n;i++) vL += (I[i]-mI)**2 + (Q[i]-mQ)**2; vL /= n;
+      let sI = 0, sQ = 0; for(let i=n-nS;i<n;i++){ sI += I[i]; sQ += Q[i]; } sI /= nS; sQ /= nS;
+      let vS = 0; for(let i=n-nS;i<n;i++) vS += (I[i]-sI)**2 + (Q[i]-sQ)**2; vS /= nS;
+      S += vS; map.push({ cm: (t - this.G)*this.cm, e: vL });
+    }
+    const med = median(map.map(m => m.e)) || 1e-30;
+    this.eMed = med;
+    this.energyMap = map.map(m => ({ cm: m.cm, e: m.e/med }));
+    const base = this.mvBase.length >= 3 ? median(this.mvBase) : null;
+    const moving = base !== null && S > 12*base;
+    if(!moving){ this.mvBase.push(S); if(this.mvBase.length > 30) this.mvBase.shift(); }
+    this.mvRatio = base ? S/base : NaN;
+    return { moving, ratio: this.mvRatio };
+  }
+  heart(){
+    const nf = Math.round(20*this.fr), fb = this.kx/60;
+    // search near the fingertip calibration (or the current track); heart rate drifts slowly within a session.
+    // A narrow window also keeps out false peaks at heart rate plus or minus the breathing rate.
+    const prior = isFinite(this.hk) ? this.hk : (this.hr0 || 72);
+    const span = isFinite(this.hk) ? Math.max(8, 0.12*prior) : this.hr0 ? Math.max(10, 0.14*prior) : 25;
+    const g1 = Math.max(0.7, (prior - span)/60), g2 = Math.min(3.0, (prior + span)/60);
+    let best = null;
+    for(let t=this.lockTap-2;t<=this.lockTap+2;t++){
+      const { I, Q, n } = this.series(t, nf);
+      if(n < nf*0.9) return;
+      const th = circleAngle(I, Q); if(!th) continue;
+      const H = Math.max(1, Math.min(14, Math.floor(3.0/fb)));
+      const r = removeHarmonics(detrend(th), this.fr, fb, H);
+      const d = new Float64Array(n-1); for(let i=0;i<n-1;i++) d[i] = r[i+1] - r[i];
+      const p = bandPeak(d, this.fr, 0.6, 3.3, { g1, g2, nfft: 4096, excl: 0.06 });
+      if(!p) continue;
+      const h = Math.round(p.f/fb);
+      if(h >= 2 && Math.abs(p.f - h*fb) < 0.02) continue;  // too close to a breathing harmonic
+      if(!best || p.prom > best.prom) best = p;
+    }
+    this.hProm = best ? best.prom : 0; this.hCand = best ? best.bpm : NaN;
+    if(best && best.prom >= (this.hr0 ? HPROM : 1.6*HPROM)){
+      const prev = this.hAcc.length ? this.hAcc[this.hAcc.length-1] : null;
+      this.hAcc.push(best.bpm); if(this.hAcc.length > 4) this.hAcc.shift();
+      if(prev !== null && Math.abs(prev - best.bpm) <= 6){
+        if(!isFinite(this.hk)){ this.hk = best.bpm; this.hP = 9; }
+        else { this.hP += 0.6; const R = 4*Math.min(3, Math.max(0.3, 30/best.prom)), K = this.hP/(this.hP + R); this.hk += K*(best.bpm - this.hk); this.hP *= (1 - K); }
+        this.hShow = true; this.hMiss = 0; return;
+      }
+    } else this.hAcc = [];
+    this.hShow = false;
+    if(++this.hMiss >= 6){ this.hk = NaN; this.hMiss = 0; }
+  }
+  snapshot(label){
+    const locked = this.state === 'locked';
+    return {
+      state: label || this.state,
+      dist: this.lockTap > 0 ? (this.lockTap - this.G)*this.cm : NaN,
+      br: locked ? this.kx : NaN, brProm: locked ? this.lastProm : 0,
+      brConf: !locked ? '' : this.lastProm >= 40 ? 'High' : this.lastProm >= 18 ? 'Medium' : 'Low',
+      hr: locked && this.hShow ? this.hk : NaN, hrProm: this.hProm, hrCand: this.hCand,
+      sig: this.sig, energyMap: this.energyMap, direct: this.directLevel, realigns: this.realigns, mvRatio: this.mvRatio, eRatio: this.lastE
+    };
+  }
+  update(){
+    if(this.dd === null) return { state: this.state };
+    const mv = this.motion();
+    if(mv.moving){
+      this.validFrom = this.n;
+      if(this.state === 'locked'){ this.state = 'lost'; this.kxLast = this.kx; }
+      this.hShow = false; this.hAcc = [];
+      return this.snapshot('moving');
+    }
+    if(this.avail() < Math.round(20*this.fr)) return this.snapshot(this.state === 'locked' ? 'locked' : 'listening');
+    const nf = Math.round(25*this.fr);
+    if(this.state === 'locked'){
+      const dt = (this.n - this.lastN)/this.fr; this.lastN = this.n;
+      this.kP += 0.08*dt;
+      const g = Math.max(2.5, 3*Math.sqrt(this.kP));
+      let best = null;
+      for(let t=this.lockTap-6;t<=this.lockTap+6;t++){
+        const r = this.tapBreath(t, nf, (this.kx - g)/60, (this.kx + g)/60, 2048);
+        if(r && r.prom > 0 && (!best || r.prom > best.prom)) best = r;
+      }
+      const eR = best && this.eMed ? best.energy/this.eMed : 0;
+      this.lastE = eR;
+      // accept only a clear rhythm at a spot that is clearly moving more than the rest of the room
+      // a sudden collapse of the rhythm (person moved away) also counts as a miss
+      if(best && best.prom >= Math.max(TRACK_PROM, 0.02*this.promRef) && eR >= E_MIN){
+        this.promRef = 0.8*this.promRef + 0.2*best.prom;
+        const R = Math.min(4, Math.max(0.25, 25/best.prom)), K = this.kP/(this.kP + R);
+        this.kx += K*(best.bpm - this.kx); this.kP *= (1 - K);
+        this.lockTap = best.t; this.miss = 0; this.lastProm = best.prom; this.sig = best.sig;
+        this.heart();
+      } else {
+        this.lastProm = best ? best.prom : 0;
+        if(++this.miss >= 4){ this.state = 'lost'; this.kxLast = this.kx; this.hShow = false; }
+      }
+    } else {
+      const b = this.search();
+      if(b && b.prom >= LOCK_PROM && b.eRatio >= E_MIN){
+        this.state = 'locked'; this.lockTap = b.t; this.kx = b.bpm; this.kP = 4; this.miss = 0; this.lastE = b.eRatio; this.promRef = b.prom;
+        this.lastProm = b.prom; this.sig = b.sig; this.lastN = this.n; this.hk = NaN; this.hAcc = []; this.hShow = false;
+      } else if(b){ this.sig = b.sig; }
+    }
+    return this.snapshot();
+  }
 }
 //DSP-END
 
+// ================= page =================
 const $ = id => document.getElementById(id);
-let ctx = null, stream = null, osc = null, tgain = null, script = null, srcNode = null, running = false, timer = null;
-let dm = null, dmRef = null, z = [], zr = [], hist = [], t0 = 0, fsB = 20, aecState = '--', refRate = 0, refPhase = 0, lastOrb = 0;
-
 function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 function setCanvas(cv){ const d = window.devicePixelRatio || 1, r = cv.getBoundingClientRect(); cv.width = r.width*d; cv.height = r.height*d; const c = cv.getContext('2d'); c.setTransform(d,0,0,d,0,0); return c; }
-function status(m, cls){ const s = $('status'); s.textContent = m; s.style.color = cls ? css(cls) : css('--ink'); }
-$('lvl').addEventListener('input', () => { $('lvlv').textContent = (+$('lvl').value).toFixed(2); if(tgain && ctx) tgain.gain.setTargetAtTime(+$('lvl').value, ctx.currentTime, 0.1); });
+const fmt = (v, d=0) => isFinite(v) ? v.toFixed(d) : '--';
+function show(id){ for(const s of ['setup','calib','place','track','results']) $(s).hidden = s !== id; }
 
-async function start(){
-  const f0 = +$('freq').value;
-  try{
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
-  }catch(e){ alert('Microphone blocked. Allow microphone access and open the page over https.'); return; }
-  const AC = window.AudioContext || window.webkitAudioContext;
-  try{ ctx = new AC({ sampleRate: 48000 }); }catch(e){ ctx = new AC(); }
-  if(ctx.state === 'suspended') await ctx.resume();
-  const fs = ctx.sampleRate;
-  if(f0 > fs/2 - 1500){ alert('This phone processes audio at ' + fs + ' Hz, too low for that tone. Choose a lower frequency.'); cleanup(); return; }
-  const st = stream.getAudioTracks()[0].getSettings ? stream.getAudioTracks()[0].getSettings() : {};
-  aecState = st.echoCancellation === false ? 'Off' : st.echoCancellation === true ? 'ON' : 'Unknown';
-  dm = makeDemod(fs, f0); dmRef = makeDemod(fs, f0 - 1300); fsB = dm.rate;
-  z = []; zr = []; hist = [];
-  tgain = ctx.createGain(); tgain.gain.value = 0;
-  osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = f0;
-  osc.connect(tgain); tgain.connect(ctx.destination); osc.start();
-  tgain.gain.setTargetAtTime(+$('lvl').value, ctx.currentTime, 0.4);
-  srcNode = ctx.createMediaStreamSource(stream);
-  script = ctx.createScriptProcessor(4096, 1, 1);
-  script.onaudioprocess = e => {
-    if(!running) return;
-    const buf = e.inputBuffer.getChannelData(0), a = [], b = [];
-    dm.push(buf, a); dmRef.push(buf, b);
-    for(const p of a) z.push(p); for(const p of b) zr.push(p);
-    if(z.length > 1400) z.splice(0, z.length - 1400);
-    if(zr.length > 1400) zr.splice(0, zr.length - 1400);
+let cal = { br0: null, hr0: null, brConf: '' };
+let ppg = null;
+let ctx = null, mic = null, eng = null, nodes = {}, loopT = null, startT = 0, settleUntil = 0, lastUpd = 0, wakeLock = null;
+let logRows = [], checks = [], hist = [], taps = [], aecState = '', checking = false;
+
+$('lvl').addEventListener('input', () => {
+  $('lvlv').textContent = (+$('lvl').value).toFixed(2);
+  if(nodes.master && ctx) nodes.master.gain.setTargetAtTime(+$('lvl').value, ctx.currentTime, 0.2);
+});
+$('hiss').addEventListener('change', () => { if(nodes.gProbe && ctx) nodes.gProbe.gain.setTargetAtTime(0.08*(+$('hiss').value), ctx.currentTime, 0.2); });
+
+// ---------- camera pulse ----------
+async function runPPG(seconds, title, onDone){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ alert('Camera access is not available here. Open this page in Chrome over https.'); return false; }
+  let stream;
+  try{ stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 30 } }, audio: false }); }
+  catch(e){ alert('Camera blocked. Allow camera access and try again.'); return false; }
+  const track = stream.getVideoTracks()[0];
+  let torch = false;
+  try{ const caps = track.getCapabilities ? track.getCapabilities() : {}; if(caps.torch){ await track.applyConstraints({ advanced: [{ torch: true }] }); torch = true; } }catch(e){}
+  const video = document.createElement('video'); video.setAttribute('playsinline',''); video.muted = true; video.srcObject = stream;
+  await video.play();
+  const probe = document.createElement('canvas'); probe.width = 16; probe.height = 16;
+  const pctx = probe.getContext('2d', { willReadFrequently: true });
+  ppg = { stream, track, video, samples: [], running: true, t0: performance.now(), dur: seconds, onDone, lastVT: -1 };
+  $('calTitle').textContent = title; $('calHr').textContent = '--'; $('calSig').textContent = '--';
+  $('calStatus').textContent = torch ? 'Rest your fingertip lightly on the rear camera and flash. Keep still.' : 'The flash could not be turned on from the browser. Use a bright light, or a native app on iPhone.';
+  const cb = (now) => {
+    if(!ppg || !ppg.running) return;
+    if(!('requestVideoFrameCallback' in video) && video.currentTime === ppg.lastVT){ next(); return; }
+    ppg.lastVT = video.currentTime;
+    if(now >= ppg.t0 + 4000){
+      pctx.drawImage(video, 0, 0, 16, 16);
+      const d = pctx.getImageData(0,0,16,16).data; let r = 0, g = 0; const n = d.length/4;
+      for(let i=0;i<d.length;i+=4){ r += d[i]; g += d[i+1]; }
+      ppg.samples.push({ t: now, v: r/n, r: r/n, g: g/n });
+    }
+    next();
   };
-  srcNode.connect(script); script.connect(ctx.destination);
-  running = true; t0 = performance.now(); refRate = +$('ref').value; refPhase = 0; lastOrb = performance.now();
-  $('live').hidden = false; $('go').hidden = true;
-  $('aec').textContent = aecState; $('bpm').textContent = '--'; $('conf').textContent = '';
-  status('Warming up. Keep still, do not talk.');
-  timer = setInterval(update, 2000);
-  requestAnimationFrame(orbLoop);
+  const next = () => ('requestVideoFrameCallback' in video) ? video.requestVideoFrameCallback(cb) : requestAnimationFrame(cb);
+  next();
+  ppg.timer = setInterval(ppgTick, 300);
+  return true;
+}
+function ppgTick(){
+  if(!ppg) return;
+  const now = performance.now(), el = (now - ppg.t0)/1000;
+  $('calProg').style.width = Math.min(100, el/ppg.dur*100) + '%';
+  $('calClock').textContent = Math.max(0, Math.ceil(ppg.dur - el)) + ' s';
+  const recent = ppg.samples.filter(s => s.t >= now - 12000);
+  const res = analyzePPG(recent);
+  drawTrace(res);
+  if(res && isFinite(res.hr)) $('calHr').textContent = Math.round(res.hr);
+  if(res) $('calSig').textContent = qualityLabel(res.quality);
+  const last = ppg.samples.slice(-10);
+  if(last.length >= 5){
+    const r = mean(last.map(s => s.r)), g = mean(last.map(s => s.g));
+    let w = null;
+    if(r >= 252) w = 'Image is saturated. Press more lightly on the lens.';
+    else if(r < 40) w = 'Too dark. Cover the camera and flash fully.';
+    else if(!(r > 90 && r > 1.4*g)) w = 'No finger detected. Cover the camera and flash fully.';
+    $('calStatus').textContent = w || 'Measuring. Keep still and breathe normally.';
+    $('calStatus').style.color = w ? css('--warn') : css('--ink');
+  }
+  if(el >= ppg.dur) finishPPG(true);
+}
+function stopCamera(){
+  if(!ppg) return;
+  ppg.running = false; clearInterval(ppg.timer);
+  try{ ppg.track.applyConstraints({ advanced: [{ torch: false }] }); }catch(e){}
+  ppg.stream.getTracks().forEach(t => t.stop());
+}
+function finishPPG(complete){
+  if(!ppg) return;
+  const p = ppg; stopCamera(); ppg = null;
+  const seg = p.samples;
+  const res = seg.length > FS*20 ? analyzePPG(seg) : null;
+  const br = res ? fuseBreath(breathCandidates(res)) : null;
+  p.onDone({ complete, hr: res && res.quality >= 0.65 ? res.hr : NaN, quality: res ? res.quality : 0, br });
+}
+function drawTrace(res){
+  const cv = $('trace'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
+  c.clearRect(0,0,W,H); c.strokeStyle = css('--line'); c.beginPath(); c.moveTo(0,H/2); c.lineTo(W,H/2); c.stroke();
+  if(!res) return;
+  const show = Math.min(res.s.length, 8*FS), off = res.s.length - show;
+  let m = 1e-9; for(let i=0;i<show;i++) m = Math.max(m, Math.abs(res.s[off+i]));
+  c.strokeStyle = css('--accent'); c.lineWidth = 2; c.beginPath();
+  for(let i=0;i<show;i++){ const X = i/(show-1)*W, Y = H/2 - (res.s[off+i]/m)*(H/2-6); i ? c.lineTo(X,Y) : c.moveTo(X,Y); }
+  c.stroke();
 }
 
-function update(){
-  if(!running) return;
-  const el = (performance.now() - t0)/1000;
-  const db = toneStrengthDb(z, zr);
-  $('tone').textContent = isFinite(db) ? (db > 15 ? 'Good' : db > 6 ? 'Weak' : 'None') + ' (' + db.toFixed(0) + ' dB)' : '--';
-  if(aecState === 'ON'){ status('Echo cancellation is on, which usually removes the tone. Sonar will likely not work on this browser or phone.', '--bad'); }
-  else if(isFinite(db) && db < 6){ status('The tone is barely received. Try another frequency, a higher level, or point the speaker and mic at your chest.', '--warn'); }
-  else if(el < 25){ status('Collecting data. ' + Math.max(0, Math.ceil(25 - el)) + ' s until the first estimate.'); }
-  if(el < 25) { drawWave(null); return; }
-  const win = z.slice(-600);
-  const res = sonarAnalyze(win, fsB);
-  if(!res){ return; }
-  drawWave(res.proj);
-  const f = res.fused;
-  if(f && f.conf !== 'Low'){
-    $('bpm').textContent = f.bpm.toFixed(1); $('conf').textContent = f.conf.toLowerCase() + ' confidence'; $('src').textContent = f.src;
-    if(!(aecState === 'ON') && !(isFinite(db) && db < 6)) status('Tracking your breathing. Stay still.', '--ok');
-  }else{
-    $('bpm').textContent = '--'; $('conf').textContent = 'unclear'; $('src').textContent = '--';
-    if(!(aecState === 'ON') && !(isFinite(db) && db < 6)) status('No clear breathing rhythm yet. Keep still and breathe normally.', '--warn');
+// ---------- calibration ----------
+$('cal').addEventListener('click', async () => {
+  show('calib');
+  const ok = await runPPG(60, 'Calibrating', r => {
+    if(!r.complete){ show('setup'); return; }
+    cal.hr0 = isFinite(r.hr) ? r.hr : null;
+    cal.br0 = r.br && r.br.conf !== 'Low' ? r.br.bpm : null;
+    cal.brConf = r.br ? r.br.conf : '';
+    $('calResult').textContent = 'Calibration: heart ' + (cal.hr0 ? Math.round(cal.hr0) + ' BPM' : 'unclear') + ', breathing ' +
+      (cal.br0 ? cal.br0.toFixed(1) + ' per min' : 'unclear (the sonar will search all rates)') + '.';
+    show('place');
+  });
+  if(!ok) show('setup');
+});
+$('skip').addEventListener('click', () => {
+  cal = { br0: null, hr0: null, brConf: '' };
+  $('calResult').textContent = 'No calibration: the sonar will search all breathing rates, and heart rate will be harder to find.';
+  show('place');
+});
+$('calCancel').addEventListener('click', () => {
+  if(checking){ finishPPG(false); return; }
+  finishPPG(false);
+});
+
+// ---------- sonar ----------
+$('startSonar').addEventListener('click', startSonar);
+async function startSonar(){
+  const AC = window.AudioContext || window.webkitAudioContext;
+  try{ ctx = new AC({ sampleRate: 48000, latencyHint: 'playback' }); }catch(e){ ctx = new AC(); }
+  if(ctx.state === 'suspended') await ctx.resume();
+  try{ mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } }); }
+  catch(e){ alert('Microphone blocked. Allow microphone access and open the page over https.'); try{ ctx.close(); }catch(_){} ctx = null; return; }
+  const sr = ctx.sampleRate;
+  if(sr < 40000){ alert('Audio runs at ' + sr + ' Hz here, too low for the sonar hiss.'); cleanupSonar(); return; }
+  const st = mic.getAudioTracks()[0].getSettings ? mic.getAudioTracks()[0].getSettings() : {};
+  aecState = st.echoCancellation === false ? 'off' : st.echoCancellation === true ? 'ON (sonar may fail)' : 'unknown';
+  show('track'); setState('Starting', ''); $('trackMsg').textContent = 'Preparing the sound...';
+  await new Promise(r => setTimeout(r, 40));
+  eng = new SonarEngine(sr, 7); eng.setPrior(cal.br0, cal.hr0);
+  const bed = makeBed(sr, 1 << 19, 11);
+  const bedBuf = ctx.createBuffer(1, bed.length, sr); bedBuf.copyToChannel(bed, 0);
+  const prBuf = ctx.createBuffer(1, eng.P, sr); prBuf.copyToChannel(eng.probe, 0);
+  const master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
+  const gBed = ctx.createGain(); gBed.gain.value = 0.18;
+  const gProbe = ctx.createGain(); gProbe.gain.value = 0.08*(+$('hiss').value);
+  const sBed = ctx.createBufferSource(); sBed.buffer = bedBuf; sBed.loop = true; sBed.connect(gBed); gBed.connect(master);
+  const sPr = ctx.createBufferSource(); sPr.buffer = prBuf; sPr.loop = true; sPr.connect(gProbe); gProbe.connect(master);
+  const t0 = ctx.currentTime + 0.05; sBed.start(t0); sPr.start(t0);
+  master.gain.setTargetAtTime(+$('lvl').value, ctx.currentTime, 0.8);
+  const src = ctx.createMediaStreamSource(mic), proc = ctx.createScriptProcessor(4096, 1, 1), zero = ctx.createGain();
+  zero.gain.value = 0;
+  proc.onaudioprocess = e => { if(eng) eng.pushMic(e.inputBuffer.getChannelData(0)); };
+  src.connect(proc); proc.connect(zero); zero.connect(ctx.destination);
+  nodes = { master, gBed, gProbe, sBed, sPr, src, proc, zero };
+  try{ if(navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+  logRows = []; hist = []; taps = []; checks = [];
+  startT = performance.now(); settleUntil = startT + 8000; lastUpd = 0;
+  $('sBr0').textContent = cal.br0 ? cal.br0.toFixed(1) : '--';
+  $('sHr0').textContent = cal.hr0 ? Math.round(cal.hr0) : '--';
+  ['sBr','sHr','sDist','sTap'].forEach(i => $(i).textContent = '--');
+  loopT = setInterval(sonarLoop, 100);
+}
+const STATE_TXT = {
+  waiting: ['Get settled', 'Place the phone and lie still.'],
+  aligning: ['Aligning', 'Lining up the sound with the microphone...'],
+  listening: ['Listening', 'Collecting about 20 s of echoes before searching...'],
+  search: ['Searching', 'Looking for your breathing. Stay still and breathe normally.'],
+  locked: ['Locked', 'Following your breathing.'],
+  lost: ['Lost', 'Lost you. Searching again. Stay still for about 20 s.'],
+  moving: ['Movement', 'Movement detected. Waiting for you to settle.']
+};
+function setState(label, cls){ const p = $('stateTxt'); p.textContent = label; p.className = 'pill ' + (cls || ''); }
+function sonarLoop(){
+  if(!eng) return;
+  const now = performance.now(), el = (now - startT)/1000;
+  $('clock').textContent = Math.floor(el/60) + ':' + String(Math.floor(el%60)).padStart(2,'0');
+  if(eng.state === 'waiting'){
+    if(now >= settleUntil) eng.beginAlign();
+    else { setState('Get settled', ''); $('trackMsg').textContent = 'Place the phone and lie still. Starting in ' + Math.ceil((settleUntil - now)/1000) + ' s.'; return; }
   }
-  hist.push({ t: el, bpm: f && f.conf !== 'Low' ? f.bpm : null });
+  eng.process();
+  if(eng.dd === null){ setState('Aligning', ''); $('trackMsg').textContent = STATE_TXT.aligning[1]; return; }
+  if(now - lastUpd < 2000) return;
+  lastUpd = now;
+  const snap = eng.update();
+  onSnap(snap, el);
+}
+function tapRate(atMs){
+  const recent = taps.filter(t => t <= atMs && t >= atMs - 60000);
+  if(recent.length < 4) return NaN;
+  const iv = []; for(let i=Math.max(1, recent.length-6);i<recent.length;i++) iv.push((recent[i]-recent[i-1])/1000);
+  const m = median(iv); return m > 1.5 && m < 15 ? 60/m : NaN;
+}
+function onSnap(s, el){
+  const st = STATE_TXT[s.state] || [s.state, ''];
+  setState(st[0], s.state === 'locked' ? 'locked' : (s.state === 'lost' || s.state === 'moving') ? s.state : '');
+  let msg = st[1];
+  if(s.state === 'locked') msg = 'Following your breathing at about ' + Math.round(s.dist) + ' cm.';
+  if(aecState.startsWith('ON')) msg += ' Echo cancellation is on in this browser, which usually removes the sonar.';
+  $('trackMsg').textContent = msg;
+  $('sBr').textContent = fmt(s.br, 1);
+  $('sBrLab').textContent = 'breaths/min (sonar' + (s.brConf ? ', ' + s.brConf.toLowerCase() + ' confidence' : '') + ')';
+  $('sHr').textContent = s.state === 'locked' ? (isFinite(s.hr) ? Math.round(s.hr) : 'none') : '--';
+  $('sHrLab').textContent = isFinite(s.hr) ? 'heart BPM (sonar, experimental)' : 'heart (sonar): not detected';
+  $('sDist').textContent = s.state === 'locked' ? Math.round(s.dist) : '--';
+  const tr = tapRate(performance.now());
+  $('sTap').textContent = fmt(tr, 1);
+  $('diag').textContent = 'Audio ' + (eng ? eng.sr : '?') + ' Hz, echo cancellation ' + aecState + ', direct sound level ' + (isFinite(s.direct) ? s.direct.toExponential(1) : '--') +
+    ', re-alignments ' + (s.realigns || 0) + (isFinite(s.hrCand) && s.state === 'locked' ? ', heart candidate ' + Math.round(s.hrCand) + ' (strength ' + s.hrProm.toFixed(0) + ')' : '') + '.';
+  hist.push({ t: el, br: s.br, hr: s.hr, tap: tr });
+  logRows.push({
+    type: 'sonar', t_s: Math.round(el), state: s.state, dist_cm: fmt(s.dist, 0), br_sonar: fmt(s.br, 2), br_strength: (s.brProm || 0).toFixed(1), br_conf: s.brConf || '',
+    hr_sonar: fmt(s.hr, 1), hr_candidate: fmt(s.hrCand, 1), hr_strength: (s.hrProm || 0).toFixed(1), br_taps: fmt(tr, 2),
+    br_calib: cal.br0 ? cal.br0.toFixed(2) : '', hr_calib: cal.hr0 ? cal.hr0.toFixed(1) : '', finger_hr: '', finger_br: ''
+  });
+  drawRange(s.energyMap, s.state === 'locked' ? s.dist : NaN);
+  drawWave(s.sig);
   drawChart();
 }
-
-function drawWave(p){
+function drawRange(map, lockCm){
+  const cv = $('range'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
+  c.clearRect(0,0,W,H);
+  const X = cm => 4 + (cm - 15)/(150 - 15)*(W - 8);
+  c.fillStyle = css('--muted'); c.font = '10px system-ui';
+  for(const cm of [25, 50, 75, 100, 125, 150]){ c.fillText(cm + '', X(cm) - 8, H - 2); }
+  if(!map) return;
+  let mx = 1; for(const m of map) mx = Math.max(mx, Math.log10(1 + m.e));
+  c.fillStyle = css('--soft');
+  const bw = Math.max(1, (W - 8)/map.length);
+  for(const m of map){ const h = Math.log10(1 + m.e)/mx*(H - 18); c.fillRect(X(m.cm), H - 14 - h, bw, h); }
+  if(isFinite(lockCm)){ c.strokeStyle = css('--pulse'); c.lineWidth = 2; c.beginPath(); c.moveTo(X(lockCm), 2); c.lineTo(X(lockCm), H - 14); c.stroke(); }
+}
+function drawWave(sig){
   const cv = $('wave'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
   c.clearRect(0,0,W,H); c.strokeStyle = css('--line'); c.beginPath(); c.moveTo(0,H/2); c.lineTo(W,H/2); c.stroke();
-  if(!p) return;
-  let m = 1e-12; for(let i=0;i<p.length;i++) m = Math.max(m, Math.abs(p[i]));
+  if(!sig || !sig.length) return;
+  let m = 1e-12; for(let i=0;i<sig.length;i++) m = Math.max(m, Math.abs(sig[i]));
   c.strokeStyle = css('--accent'); c.lineWidth = 2; c.beginPath();
-  for(let i=0;i<p.length;i++){ const X = i/(p.length-1)*W, Y = H/2 - (p[i]/m)*(H/2-8); i ? c.lineTo(X,Y) : c.moveTo(X,Y); }
+  for(let i=0;i<sig.length;i++){ const X = i/(sig.length-1)*W, Y = H/2 - (sig[i]/m)*(H/2-6); i ? c.lineTo(X,Y) : c.moveTo(X,Y); }
   c.stroke();
 }
 function drawChart(){
   const cv = $('chart'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
-  const tmax = Math.max(60, hist.length ? hist[hist.length-1].t : 60), y0 = 4, y1 = 30;
-  const X = t => 24 + t/tmax*(W-30), Y = v => H-12 - (v-y0)/(y1-y0)*(H-20);
-  c.clearRect(0,0,W,H); c.strokeStyle = css('--line'); c.fillStyle = css('--muted'); c.font = '10px system-ui'; c.lineWidth = 1;
-  for(const v of [6,12,18,24,30]){ c.beginPath(); c.moveTo(24,Y(v)); c.lineTo(W-6,Y(v)); c.stroke(); c.fillText(v, 2, Y(v)+3); }
-  if(refRate){ c.strokeStyle = css('--accent'); c.lineWidth = 2; c.beginPath(); c.moveTo(24,Y(refRate)); c.lineTo(W-6,Y(refRate)); c.stroke(); }
-  c.fillStyle = css('--pulse');
-  for(const h of hist){ if(h.bpm == null) continue; c.beginPath(); c.arc(X(h.t), Y(h.bpm), 3, 0, 6.283); c.fill(); }
-}
-function orbLoop(now){
-  if(!running) return;
-  const dt = (now - lastOrb)/1000; lastOrb = now;
-  const cv = $('orb'), c = setCanvas(cv), W = cv.clientWidth, H = cv.clientHeight;
   c.clearRect(0,0,W,H);
-  let r = 40, label = 'Breathe normally';
-  if(refRate){ refPhase += dt*refRate/60; const x = refPhase % 1; const L = x < 0.4 ? 0.5 - 0.5*Math.cos(Math.PI*x/0.4) : 0.5 + 0.5*Math.cos(Math.PI*(x-0.4)/0.6); r = 30 + 38*L; label = x < 0.4 ? 'In' : 'Out'; }
-  c.fillStyle = css('--soft'); c.beginPath(); c.arc(W/2,H/2,r,0,6.283); c.fill();
-  c.strokeStyle = css('--accent'); c.lineWidth = 3; c.beginPath(); c.arc(W/2,H/2,r,0,6.283); c.stroke();
-  c.fillStyle = css('--ink'); c.font = '600 15px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(label, W/2, H/2);
-  requestAnimationFrame(orbLoop);
+  const tmax = Math.max(120, hist.length ? hist[hist.length-1].t + 10 : 120);
+  const X = t => 26 + t/tmax*(W - 32);
+  const top = { y0: 4, y1: 24, a: 6, b: H/2 - 10 }, bot = { y0: 45, y1: 115, a: H/2 + 6, b: H - 14 };
+  const Y = (p, v) => p.b - (v - p.y0)/(p.y1 - p.y0)*(p.b - p.a);
+  c.font = '10px system-ui'; c.fillStyle = css('--muted'); c.strokeStyle = css('--line'); c.lineWidth = 1;
+  for(const [p, ticks] of [[top, [6, 12, 18, 24]], [bot, [50, 70, 90, 110]]]) for(const v of ticks){ c.beginPath(); c.moveTo(26, Y(p,v)); c.lineTo(W-6, Y(p,v)); c.stroke(); c.fillText(v, 2, Y(p,v)+3); }
+  if(cal.br0){ c.strokeStyle = css('--accent'); c.setLineDash([4,3]); c.beginPath(); c.moveTo(26, Y(top, cal.br0)); c.lineTo(W-6, Y(top, cal.br0)); c.stroke(); c.setLineDash([]); }
+  if(cal.hr0){ c.strokeStyle = css('--heart'); c.setLineDash([4,3]); c.beginPath(); c.moveTo(26, Y(bot, cal.hr0)); c.lineTo(W-6, Y(bot, cal.hr0)); c.stroke(); c.setLineDash([]); }
+  for(const h of hist){
+    if(isFinite(h.br) && h.br >= top.y0 && h.br <= top.y1){ c.fillStyle = css('--pulse'); c.beginPath(); c.arc(X(h.t), Y(top, h.br), 3, 0, 6.283); c.fill(); }
+    if(isFinite(h.tap) && h.tap >= top.y0 && h.tap <= top.y1){ c.strokeStyle = css('--ink'); c.lineWidth = 1; c.beginPath(); c.arc(X(h.t), Y(top, h.tap), 4, 0, 6.283); c.stroke(); }
+    if(isFinite(h.hr) && h.hr >= bot.y0 && h.hr <= bot.y1){ c.fillStyle = css('--heart'); c.beginPath(); c.arc(X(h.t), Y(bot, h.hr), 3, 0, 6.283); c.fill(); }
+  }
+  for(const k of checks){ if(isFinite(k.finger_hr)){ c.strokeStyle = css('--heart'); c.lineWidth = 2; c.beginPath(); c.arc(X(k.t), Y(bot, k.finger_hr), 5, 0, 6.283); c.stroke(); } }
 }
-
-function cleanup(){
-  running = false; clearInterval(timer);
-  try{ tgain && ctx && tgain.gain.setTargetAtTime(0, ctx.currentTime, 0.1); }catch(e){}
-  const c = ctx, o = osc, s = script, sn = srcNode, st = stream;
-  setTimeout(() => { try{ o && o.stop(); }catch(e){} try{ s && s.disconnect(); sn && sn.disconnect(); }catch(e){} try{ c && c.close(); }catch(e){} }, 500);
-  st && st.getTracks().forEach(t => t.stop());
-  ctx = osc = script = srcNode = stream = null;
+$('tapBtn').addEventListener('click', () => { taps.push(performance.now()); const b = $('tapBtn'); b.style.opacity = '0.6'; setTimeout(() => b.style.opacity = '', 150); });
+$('fcheck').addEventListener('click', async () => {
+  if(!eng || checking) return;
+  const last = [...logRows].reverse().find(r => r.type === 'sonar' && r.state === 'locked');
+  const at = (performance.now() - startT)/1000;
+  checking = true; show('calib');
+  const ok = await runPPG(45, 'Fingertip check', r => {
+    checking = false; show('track');
+    if(!r.complete) return;
+    const row = { type: 'finger_check', t_s: Math.round(at), state: '', dist_cm: '', br_sonar: last ? last.br_sonar : '', br_strength: '', br_conf: '', hr_sonar: last ? last.hr_sonar : '',
+      hr_candidate: '', hr_strength: '', br_taps: fmt(tapRate(performance.now()), 2), br_calib: '', hr_calib: '',
+      finger_hr: fmt(r.hr, 1), finger_br: r.br && r.br.conf !== 'Low' ? r.br.bpm.toFixed(2) : '' };
+    logRows.push(row); checks.push({ t: at, finger_hr: r.hr, row });
+    $('trackMsg').textContent = 'Check saved. Put the phone back where it was and lie still. The sonar will find you again.';
+  });
+  if(!ok){ checking = false; show('track'); }
+});
+$('stop').addEventListener('click', () => { cleanupSonar(); showResults(); });
+function cleanupSonar(){
+  clearInterval(loopT); loopT = null;
+  try{ nodes.master && nodes.master.gain.setTargetAtTime(0, ctx.currentTime, 0.2); }catch(e){}
+  const c = ctx, n = nodes, m = mic;
+  setTimeout(() => { try{ n.sBed && n.sBed.stop(); n.sPr && n.sPr.stop(); n.proc && n.proc.disconnect(); n.src && n.src.disconnect(); }catch(e){} try{ c && c.close(); }catch(e){} }, 600);
+  m && m.getTracks().forEach(t => t.stop());
+  try{ wakeLock && wakeLock.release(); }catch(e){}
+  ctx = null; mic = null; nodes = {}; eng = null; wakeLock = null;
 }
-$('go').addEventListener('click', start);
-$('stop').addEventListener('click', () => { cleanup(); $('live').hidden = true; $('go').hidden = false; });
+function showResults(){
+  show('results');
+  const tb = $('cmp').querySelector('tbody'); tb.innerHTML = '';
+  const add = cells => { const tr = document.createElement('tr'); cells.forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); }); tb.appendChild(tr); };
+  for(const k of checks) add(['Finger at ' + Math.round(k.t) + ' s', k.row.br_sonar || '--', k.row.finger_br || '--', k.row.hr_sonar || '--', k.row.finger_hr || '--']);
+  const pairs = logRows.filter(r => r.type === 'sonar' && r.br_sonar !== '--' && r.br_taps !== '--');
+  if(pairs.length){
+    const d = pairs.map(r => Math.abs(+r.br_sonar - +r.br_taps));
+    add(['Your taps (' + pairs.length + ' readings)', 'avg ' + mean(pairs.map(r => +r.br_sonar)).toFixed(1), 'avg ' + mean(pairs.map(r => +r.br_taps)).toFixed(1), '', '']);
+    $('resNote').textContent = 'Sonar breathing was within ' + median(d).toFixed(1) + ' breaths/min of your taps on a typical reading.';
+  } else $('resNote').textContent = checks.length ? '' : 'No accuracy checks were done. Use the inhale taps or a fingertip check next time to compare.';
+  const locked = logRows.filter(r => r.type === 'sonar' && r.state === 'locked').length, all = logRows.filter(r => r.type === 'sonar').length;
+  const hrShown = logRows.filter(r => r.type === 'sonar' && r.hr_sonar !== '--').length;
+  $('resNote').textContent += ' Locked ' + (all ? Math.round(locked/all*100) : 0) + '% of the time; heart rate shown in ' + (locked ? Math.round(hrShown/locked*100) : 0) + '% of locked readings.';
+}
+$('exp').addEventListener('click', () => {
+  if(!logRows.length) return;
+  const keys = Object.keys(logRows[0]);
+  const csv = [keys.join(',')].concat(logRows.map(r => keys.map(k => r[k] == null ? '' : r[k]).join(','))).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'sonar-lock.csv'; a.click();
+});
+$('again').addEventListener('click', () => show('setup'));
 </script>
 </body>
 </html>
