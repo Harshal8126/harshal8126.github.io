@@ -446,7 +446,11 @@ class SonarEngine{
     this.mvBase = []; this.hk = NaN; this.hP = 0; this.hShow = false; this.hProm = 0; this.hCand = NaN; this.hAcc = []; this.hMiss = 0;
   }
   setPrior(br0, hr0){ this.br0 = br0 || null; this.hr0 = hr0 || null; }
-  pushMic(buf){ const m = this.RB - 1; for(let i=0;i<buf.length;i++) this.ring[(this.w + i) & m] = buf[i]; this.w += buf.length; }
+  pushMic(buf){
+    const m = this.RB - 1; let e = 0;
+    for(let i=0;i<buf.length;i++){ const v = buf[i]; this.ring[(this.w + i) & m] = v; e += v*v; }
+    this.w += buf.length; this.micMs = 0.9*(this.micMs || e/buf.length) + 0.1*(e/buf.length);
+  }
   beginAlign(){ if(this.state === 'waiting'){ this.alignAt = this.w + Math.round(0.5*this.sr); this.state = 'aligning'; } }
 
   // Complex echo profile (impulse response) for the P samples starting at s, assuming the
@@ -485,19 +489,25 @@ class SonarEngine{
   }
   frame(s){
     const P = this.P, G = this.G, M = this.M;
+    // q may be fractional: the speaker and mic clocks can drift apart slowly, so the alignment
+    // is tracked to a fraction of a sample instead of skipping frames.
     const q = (((s - this.dd) % P) + P) % P;
     this.cir(s, q);
     const R = this.bRe, I = this.bIm, ix = t => ((t - G) % P + P) % P;
+    const mag = t => { const j = ix(t); return Math.hypot(R[j], I[j]); };
     let bt = G, bm = -1;
-    for(let t=G-3;t<=G+3;t++){ const j = ix(t), v = R[j]*R[j] + I[j]*I[j]; if(v > bm){ bm = v; bt = t; } }
-    if(bt !== G){
-      if(++this.drift >= 8){ this.dd = ((this.dd + (bt - G)) % P + P) % P; this.drift = 0; this.realigns++; this.n = 0; this.validFrom = 0; if(this.state === 'locked'){ this.state = 'lost'; this.kxLast = this.kx; } }
-      return;
-    }
-    this.drift = 0;
+    for(let t=G-8;t<=G+8;t++){ const v = mag(t); if(v > bm){ bm = v; bt = t; } }
+    if(Math.abs(bt - G) >= 2){ this.dd = ((this.dd + (bt - G)) % P + P) % P; this.realigns++; return; } // big jump: re-centre, keep history
+    const a = mag(G-1), b = mag(G), c = mag(G+1), den = a - 2*b + c;
+    const off = den < 0 ? Math.max(-1, Math.min(1, 0.5*(a - c)/den)) : 0;
+    this.dd = ((this.dd + 0.25*off) % P + P) % P;    // slowly follow drift
     const dr = R[ix(G)], di = I[ix(G)], dm = dr*dr + di*di;
     if(!(dm > 0)) return;
     this.directLevel = Math.sqrt(dm);
+    // how far the received hiss stands above the noise floor (far taps hold mostly noise)
+    const far = []; for(let t=M-120;t<M;t+=3) far.push(mag(t));
+    const snr = 20*Math.log10(this.directLevel/(median(far) || 1e-30));
+    this.snrDb = isFinite(this.snrDb) ? 0.9*this.snrDb + 0.1*snr : snr;
     const row = (this.n % this.T)*M;
     for(let t=0;t<M;t++){
       const j = ix(t), a = R[j], b = I[j];
@@ -611,7 +621,8 @@ class SonarEngine{
       br: locked ? this.kx : NaN, brProm: locked ? this.lastProm : 0,
       brConf: !locked ? '' : this.lastProm >= 40 ? 'High' : this.lastProm >= 18 ? 'Medium' : 'Low',
       hr: locked && this.hShow ? this.hk : NaN, hrProm: this.hProm, hrCand: this.hCand,
-      sig: this.sig, energyMap: this.energyMap, direct: this.directLevel, realigns: this.realigns, mvRatio: this.mvRatio, eRatio: this.lastE
+      sig: this.sig, energyMap: this.energyMap, direct: this.directLevel, realigns: this.realigns, mvRatio: this.mvRatio, eRatio: this.lastE,
+      secs: this.avail()/this.fr, snrDb: this.snrDb, micDb: 10*Math.log10(this.micMs || 1e-12)
     };
   }
   update(){
@@ -823,8 +834,8 @@ async function startSonar(){
 const STATE_TXT = {
   waiting: ['Get settled', 'Place the phone and lie still.'],
   aligning: ['Aligning', 'Lining up the sound with the microphone...'],
-  listening: ['Listening', 'Collecting about 20 s of echoes before searching...'],
-  search: ['Searching', 'Looking for your breathing. Stay still and breathe normally.'],
+  listening: ['Listening', 'Collecting about 20 s of echoes before searching. The motion bars below should already react if you wave a hand.'],
+  search: ['Searching', 'Looking for your breathing. Stay still and breathe normally. To test the sonar, slowly wave a hand 30-60 cm in front of the phone: the motion bars should jump.'],
   locked: ['Locked', 'Following your breathing.'],
   lost: ['Lost', 'Lost you. Searching again. Stay still for about 20 s.'],
   moving: ['Movement', 'Movement detected. Waiting for you to settle.']
@@ -865,8 +876,11 @@ function onSnap(s, el){
   $('sDist').textContent = s.state === 'locked' ? Math.round(s.dist) : '--';
   const tr = tapRate(performance.now());
   $('sTap').textContent = fmt(tr, 1);
-  $('diag').textContent = 'Audio ' + (eng ? eng.sr : '?') + ' Hz, echo cancellation ' + aecState + ', direct sound level ' + (isFinite(s.direct) ? s.direct.toExponential(1) : '--') +
-    ', re-alignments ' + (s.realigns || 0) + (isFinite(s.hrCand) && s.state === 'locked' ? ', heart candidate ' + Math.round(s.hrCand) + ' (strength ' + s.hrProm.toFixed(0) + ')' : '') + '.';
+  let peak = null; if(s.energyMap) for(const m of s.energyMap) if(!peak || m.e > peak.e) peak = m;
+  const hissTxt = !isFinite(s.snrDb) ? '--' : s.snrDb.toFixed(0) + ' dB' + (s.snrDb < 15 ? ' (weak: try Strong hiss, louder, or point the bottom edge at you)' : '');
+  $('diag').textContent = 'Mic ' + fmt(s.micDb, 0) + ' dBFS. Hiss received ' + hissTxt + '. Echo cancellation ' + aecState + '. Data ' + fmt(s.secs, 0) + ' s. ' +
+    'Strongest motion ' + (peak ? Math.round(peak.cm) + ' cm (x' + peak.e.toFixed(0) + ')' : '--') + '. Re-syncs ' + (s.realigns || 0) + '. Audio ' + (eng ? eng.sr : '?') + ' Hz' +
+    (isFinite(s.hrCand) && s.state === 'locked' ? '. Heart candidate ' + Math.round(s.hrCand) + ' (strength ' + s.hrProm.toFixed(0) + ')' : '') + '.';
   hist.push({ t: el, br: s.br, hr: s.hr, tap: tr });
   logRows.push({
     type: 'sonar', t_s: Math.round(el), state: s.state, dist_cm: fmt(s.dist, 0), br_sonar: fmt(s.br, 2), br_strength: (s.brProm || 0).toFixed(1), br_conf: s.brConf || '',
