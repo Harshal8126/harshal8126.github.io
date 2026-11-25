@@ -573,9 +573,13 @@ class SonarEngine{
     const med = median(map.map(m => m.e)) || 1e-30;
     this.eMed = med;
     this.energyMap = map.map(m => ({ cm: m.cm, e: m.e/med }));
-    const base = this.mvBase.length >= 3 ? median(this.mvBase) : null;
-    const moving = base !== null && S > 12*base;
-    if(!moving){ this.mvBase.push(S); if(this.mvBase.length > 30) this.mvBase.shift(); }
+    // Baseline = a low percentile of the last ~20 s, including busy periods. A short burst (turning over)
+    // is flagged, but a change that persists (phone on the same mattress, a fan) becomes the new normal
+    // within about 15 s instead of blocking measurement forever.
+    let base = null;
+    if(this.mvBase.length >= 3){ const sr = [...this.mvBase].sort((a,b) => a-b); base = sr[Math.floor(0.3*(sr.length-1))]; }
+    const moving = base !== null && S > 10*base;
+    this.mvBase.push(S); if(this.mvBase.length > 10) this.mvBase.shift();
     this.mvRatio = base ? S/base : NaN;
     return { moving, ratio: this.mvRatio };
   }
@@ -682,6 +686,15 @@ let cal = { br0: null, hr0: null, brConf: '' };
 let ppg = null;
 let ctx = null, mic = null, eng = null, nodes = {}, loopT = null, startT = 0, settleUntil = 0, lastUpd = 0, wakeLock = null;
 let logRows = [], checks = [], hist = [], taps = [], aecState = '', checking = false;
+let accBuf = [], motionOn = false;
+function onPhoneMotion(e){ const a = e.accelerationIncludingGravity; if(!a || a.x == null) return; accBuf.push({ t: performance.now(), x: a.x, y: a.y, z: a.z }); if(accBuf.length > 400) accBuf.splice(0, accBuf.length - 400); }
+// how much the phone itself is moving over the last 3 s (m/s^2, gravity removed by subtracting the mean)
+function phoneMotion(){
+  const now = performance.now(), r = accBuf.filter(v => v.t >= now - 3000);
+  if(r.length < 20) return NaN;
+  let v = 0; for(const k of ['x','y','z']){ const m = mean(r.map(o => o[k])); v += mean(r.map(o => (o[k]-m)**2)); }
+  return Math.sqrt(v);
+}
 
 $('lvl').addEventListener('input', () => {
   $('lvlv').textContent = (+$('lvl').value).toFixed(2);
@@ -796,6 +809,8 @@ $('calCancel').addEventListener('click', () => {
 // ---------- sonar ----------
 $('startSonar').addEventListener('click', startSonar);
 async function startSonar(){
+  // motion permission on iPhone must be requested directly from the tap
+  try{ if(typeof DeviceMotionEvent !== 'undefined'){ let okM = true; if(typeof DeviceMotionEvent.requestPermission === 'function') okM = (await DeviceMotionEvent.requestPermission()) === 'granted'; if(okM){ accBuf = []; addEventListener('devicemotion', onPhoneMotion); motionOn = true; } } }catch(e){}
   const AC = window.AudioContext || window.webkitAudioContext;
   try{ ctx = new AC({ sampleRate: 48000, latencyHint: 'playback' }); }catch(e){ ctx = new AC(); }
   if(ctx.state === 'suspended') await ctx.resume();
@@ -838,7 +853,7 @@ const STATE_TXT = {
   search: ['Searching', 'Looking for your breathing. Stay still and breathe normally. To test the sonar, slowly wave a hand 30-60 cm in front of the phone: the motion bars should jump.'],
   locked: ['Locked', 'Following your breathing.'],
   lost: ['Lost', 'Lost you. Searching again. Stay still for about 20 s.'],
-  moving: ['Movement', 'Movement detected. Waiting for you to settle.']
+  moving: ['Movement', 'Movement detected, which means the sonar can see you. Waiting for you to settle.']
 };
 function setState(label, cls){ const p = $('stateTxt'); p.textContent = label; p.className = 'pill ' + (cls || ''); }
 function sonarLoop(){
@@ -868,6 +883,8 @@ function onSnap(s, el){
   let msg = st[1];
   if(s.state === 'locked') msg = 'Following your breathing at about ' + Math.round(s.dist) + ' cm.';
   if(aecState.startsWith('ON')) msg += ' Echo cancellation is on in this browser, which usually removes the sonar.';
+  const pm = phoneMotion();
+  if(pm > 0.05) msg += ' The phone itself is moving (' + pm.toFixed(2) + '). Put it on a firm surface that you are not lying on, such as a bedside table.';
   $('trackMsg').textContent = msg;
   $('sBr').textContent = fmt(s.br, 1);
   $('sBrLab').textContent = 'breaths/min (sonar' + (s.brConf ? ', ' + s.brConf.toLowerCase() + ' confidence' : '') + ')';
@@ -885,7 +902,9 @@ function onSnap(s, el){
   logRows.push({
     type: 'sonar', t_s: Math.round(el), state: s.state, dist_cm: fmt(s.dist, 0), br_sonar: fmt(s.br, 2), br_strength: (s.brProm || 0).toFixed(1), br_conf: s.brConf || '',
     hr_sonar: fmt(s.hr, 1), hr_candidate: fmt(s.hrCand, 1), hr_strength: (s.hrProm || 0).toFixed(1), br_taps: fmt(tr, 2),
-    br_calib: cal.br0 ? cal.br0.toFixed(2) : '', hr_calib: cal.hr0 ? cal.hr0.toFixed(1) : '', finger_hr: '', finger_br: ''
+    br_calib: cal.br0 ? cal.br0.toFixed(2) : '', hr_calib: cal.hr0 ? cal.hr0.toFixed(1) : '', finger_hr: '', finger_br: '',
+    mic_dbfs: fmt(s.micDb, 1), hiss_db: fmt(s.snrDb, 1), data_s: fmt(s.secs, 0), peak_motion_cm: peak ? Math.round(peak.cm) : '', peak_motion_x: peak ? peak.e.toFixed(1) : '',
+    move_ratio: fmt(s.mvRatio, 1), phone_motion: fmt(pm, 3), resyncs: s.realigns || 0, echo_cancel: aecState
   });
   drawRange(s.energyMap, s.state === 'locked' ? s.dist : NaN);
   drawWave(s.sig);
@@ -942,7 +961,8 @@ $('fcheck').addEventListener('click', async () => {
     if(!r.complete) return;
     const row = { type: 'finger_check', t_s: Math.round(at), state: '', dist_cm: '', br_sonar: last ? last.br_sonar : '', br_strength: '', br_conf: '', hr_sonar: last ? last.hr_sonar : '',
       hr_candidate: '', hr_strength: '', br_taps: fmt(tapRate(performance.now()), 2), br_calib: '', hr_calib: '',
-      finger_hr: fmt(r.hr, 1), finger_br: r.br && r.br.conf !== 'Low' ? r.br.bpm.toFixed(2) : '' };
+      finger_hr: fmt(r.hr, 1), finger_br: r.br && r.br.conf !== 'Low' ? r.br.bpm.toFixed(2) : '',
+      mic_dbfs: '', hiss_db: '', data_s: '', peak_motion_cm: '', peak_motion_x: '', move_ratio: '', phone_motion: '', resyncs: '', echo_cancel: '' };
     logRows.push(row); checks.push({ t: at, finger_hr: r.hr, row });
     $('trackMsg').textContent = 'Check saved. Put the phone back where it was and lie still. The sonar will find you again.';
   });
@@ -955,6 +975,7 @@ function cleanupSonar(){
   const c = ctx, n = nodes, m = mic;
   setTimeout(() => { try{ n.sBed && n.sBed.stop(); n.sPr && n.sPr.stop(); n.proc && n.proc.disconnect(); n.src && n.src.disconnect(); }catch(e){} try{ c && c.close(); }catch(e){} }, 600);
   m && m.getTracks().forEach(t => t.stop());
+  if(motionOn){ removeEventListener('devicemotion', onPhoneMotion); motionOn = false; }
   try{ wakeLock && wakeLock.release(); }catch(e){}
   ctx = null; mic = null; nodes = {}; eng = null; wakeLock = null;
 }
