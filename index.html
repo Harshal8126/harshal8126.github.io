@@ -42,7 +42,7 @@ input[type=range]{padding:0;width:120px}
   <div class="row" style="margin-top:8px"><label>Volume</label><input id="lvl" type="range" min="0.05" max="1" step="0.05" value="0.6"><span class="small" id="resTxt"></span></div>
  </div>
  <div class="card">
-  <div class="small" id="lbl1">Strongest echo</div>
+  <div class="small" id="lbl1">Clearest still object</div>
   <div class="big" id="dist">—</div>
   <div class="small" id="others">Point the bottom edge of the phone at a wall and press Start.</div>
   <div class="small" id="qual" style="margin-top:4px"></div>
@@ -147,32 +147,40 @@ class Sonar{
     const fl=[]; for(let o=P/2;o<P-64;o+=16){ const j=(n0+o)&mask; fl.push(Math.hypot(re[j], im[j])); }
     fl.sort((x,y)=>x-y); const snr=20*Math.log10(Math.sqrt(best)/(fl[fl.length>>1]+1e-12));
     this.snrDb = this.n ? 0.9*this.snrDb+0.1*snr : snr;
-    if(!this.env){ this.env=Float32Array.from(a); this.bgR=Float32Array.from(gr); this.bgI=Float32Array.from(gi); this.mot=new Float32Array(M+1); }
+    if(!this.env){ this.env=new Float32Array(M+1); this.bgR=Float32Array.from(gr); this.bgI=Float32Array.from(gi); this.mot=new Float32Array(M+1); }
     for(let m=0;m<=M;m++){
-      this.env[m]=0.65*this.env[m]+0.35*a[m];
       const dr=gr[m]-this.bgR[m], di=gi[m]-this.bgI[m];
       this.mot[m]=0.5*this.mot[m]+0.5*Math.hypot(dr, di);
       this.bgR[m]+=0.08*dr; this.bgI[m]+=0.08*di;
+      // Echo view = coherent (phase-aligned) average: still objects add up, fluctuating reverb/noise cancels.
+      this.env[m]=Math.hypot(this.bgR[m], this.bgI[m]);
     }
     this.n++; return true;
   }
   db(view){
     const src = view==='motion' ? this.mot : this.env, M=this.M, out=new Float32Array(M+1);
-    for(let m=0;m<=M;m++){ const g=Math.max(1, m*this.cmPerTap/25); out[m]=20*Math.log10(src[m]*g+1e-9); }
+    for(let m=0;m<=M;m++){ const g=Math.max(1, Math.sqrt(m*this.cmPerTap/25)); out[m]=20*Math.log10(src[m]*g+1e-9); }
     return out;
   }
-  peaks(db, minCm, maxN=3, above=10){
-    const M=this.M, m0=Math.min(M, Math.ceil(minCm/this.cmPerTap)), W=this.res, vals=[];
+  // Peaks ranked by how far they stand above their own neighbourhood (±40 cm), not by absolute level,
+  // so distant reverb boosted by range gain can't win. If motDb is given, also report "steady" =
+  // echo minus fluctuation in dB: a real still object is well above its own flicker.
+  peaks(db, minCm, maxN=3, above=6, motDb=null){
+    const M=this.M, m0=Math.min(M, Math.ceil(minCm/this.cmPerTap)), W=this.res, L=Math.round(40/this.cmPerTap), vals=[];
     for(let m=m0;m<=M;m++) vals.push(db[m]);
     vals.sort((x,y)=>x-y); const floor=vals[vals.length>>1], out=[];
+    const pre=new Float64Array(M+2); for(let m=0;m<=M;m++) pre[m+1]=pre[m]+db[m];
     for(let m=m0;m<=M;m++){
-      const v=db[m]; if(v<floor+above) continue; let ok=true;
+      const v=db[m], a=Math.max(m0, m-L), b=Math.min(M, m+L), loc=(pre[b+1]-pre[a])/(b-a+1);
+      if(v<loc+above) continue; let ok=true;
       for(let j=Math.max(0,m-W); j<=Math.min(M,m+W); j++){ if(db[j]>v || (db[j]===v && j<m)){ ok=false; break; } }
       if(!ok) continue;
+      const steady = motDb ? v-motDb[m] : null;
+      if(motDb && steady<3) continue;
       let off=0; if(m>0 && m<M){ const p=db[m-1], q=db[m+1], den=p-2*v+q; if(den<0) off=Math.max(-0.5, Math.min(0.5, 0.5*(p-q)/den)); }
-      out.push({m, cm:(m+off)*this.cmPerTap, db:v, above:v-floor});
+      out.push({m, cm:(m+off)*this.cmPerTap, db:v, above:v-loc, steady});
     }
-    out.sort((x,y)=>y.db-x.db); return {floor, list:out.slice(0, maxN)};
+    out.sort((x,y)=>y.above-x.above); return {floor, list:out.slice(0, maxN)};
   }
 }
 // Knock analysis: how long the surface rings and how low it sounds.
@@ -244,22 +252,32 @@ function buildSonar(){
   gainNode.gain.value=+$('#lvl').value;
   probeSrc.connect(gainNode); probeSrc.start();
   startAt=total+Math.round(0.6*ac.sampleRate); floorS=null; lastDb=null; lastPk=null;
+  lastLogT=-1; runLog.push(`# band ${f1}-${f2} Hz, range ${$('#range').value} cm, volume ${$('#lvl').value}, started ${new Date().toLocaleTimeString()}`);
   $('#resTxt').textContent=`Detail ≈ ${sonar.resCm.toFixed(1)} cm`;
   clearScan();
 }
 const win=new Float32Array(8192);
+let runLog=[], lastLogT=-1;
 function echoBlock(){
   if(!sonar || total<startAt || total<sonar.P) return;
   const P=sonar.P; for(let i=0;i<P;i++) win[i]=ring[(total-P+i)&RM];
   if(!sonar.process(win)) return;
-  const view=$('#view').value, db=sonar.db(view), pk=sonar.peaks(db, 15, 3, view==='motion'?12:10);
+  const view=$('#view').value, eDb=sonar.db('echo'), mDb=sonar.db('motion');
+  const ePk=sonar.peaks(eDb, 15, 3, 6, mDb), mPk=sonar.peaks(mDb, 15, 3, 8);
+  const db = view==='motion' ? mDb : eDb, pk = view==='motion' ? mPk : ePk;
   floorS = floorS===null ? pk.floor : 0.9*floorS+0.1*pk.floor;
   lastDb=db; lastPk=pk; frames++;
   addColumn(db);
+  const tNow=(total-startAt)/ac.sampleRate;
+  if(tNow-lastLogT>=1){ lastLogT=tNow; const f=(l,i,k)=>l[i]?(k==='cm'?l[i].cm.toFixed(1):l[i][k]==null?'':l[i][k].toFixed(1)):'';
+    runLog.push([tNow.toFixed(1), sonar.snrDb.toFixed(1), (20*Math.log10(micRms+1e-9)).toFixed(1),
+      ...[0,1,2].flatMap(i=>[f(ePk.list,i,'cm'), f(ePk.list,i,'above'), f(ePk.list,i,'steady')]),
+      ...[0,1].flatMap(i=>[f(mPk.list,i,'cm'), f(mPk.list,i,'above')])].join(','));
+    if(runLog.length>1800) runLog.shift(); }
 }
 async function startEcho(){
   try{ await openAudio(); }catch(e){ $('#others').textContent='Microphone blocked: '+e.message; closeAudio(); return; }
-  mode='echo'; buildSonar();
+  mode='echo'; runLog=[]; buildSonar();
   $('#bStart').textContent='Stop'; $('#bStart').className='stop';
   loop();
 }
@@ -327,7 +345,7 @@ function drawB(){
 function readout(){
   if(!sonar) return;
   const motion=$('#view').value==='motion';
-  $('#lbl1').textContent = motion ? 'Movement at' : 'Strongest echo';
+  $('#lbl1').textContent = motion ? 'Movement at' : 'Clearest still object';
   const L=lastPk?.list||[];
   if(L.length){ $('#dist').textContent=Math.round(L[0].cm)+' cm';
     $('#others').textContent = L.length>1 ? 'Other echoes: '+L.slice(1).map(p=>Math.round(p.cm)+' cm').join(', ') : (motion?'':'No other clear echoes');
@@ -348,7 +366,10 @@ $('#bClear').onclick=clearScan;
 $('#bCsv').onclick=()=>{
   if(!lastDb||!sonar) return;
   const e=sonar.db('echo'), m=sonar.db('motion');
-  let s=`# band_hz,${sonar.f1}-${sonar.f2},sample_rate,${sonar.sr},signal_db,${sonar.snrDb.toFixed(1)},peaks_cm,${(lastPk?.list||[]).map(p=>p.cm.toFixed(1)).join(' ')}\ndistance_cm,echo_db,motion_db\n`;
+  let s='# LOG (one row per second). above = dB over its ±40 cm neighbourhood; steady = echo minus flicker in dB\n'+
+    't_s,signal_db,mic_dbfs,e1_cm,e1_above,e1_steady,e2_cm,e2_above,e2_steady,e3_cm,e3_above,e3_steady,mv1_cm,mv1_above,mv2_cm,mv2_above\n'+
+    runLog.join('\n')+'\n\n';
+  s+=`# PROFILE at save time. band_hz,${sonar.f1}-${sonar.f2},sample_rate,${sonar.sr},signal_db,${sonar.snrDb.toFixed(1)},peaks_cm,${(lastPk?.list||[]).map(p=>p.cm.toFixed(1)).join(' ')}\ndistance_cm,echo_db,motion_db\n`;
   for(let i=0;i<=sonar.M;i++) s+=`${(i*sonar.cmPerTap).toFixed(2)},${e[i].toFixed(2)},${m[i].toFixed(2)}\n`;
   download('sonar-echo.csv', s);
 };
