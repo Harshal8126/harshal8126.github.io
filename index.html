@@ -121,8 +121,8 @@
   <li><b>Fine distance:</b> phase of each echo relative to the direct path, displacement = −Δphase·λ/(4π), unwrapped over time. A static reflector at the same distance adds a constant phasor; it is removed by fitting a circle to the echo’s phasor arc (Kåsa algebraic fit, then geometric least-squares refinement) only when that centre is well defined: arc ≥ 60° around it and the points' distance from it varies less than half as much as their distance from zero. Otherwise the raw phase (centre at zero) is used, which under-reads small movements if a static reflector sits at the same distance. Plain unwrapping needs the echo to move less than λ/4 between two cycles (4.6 mm at 18.5 kHz). If more than 10% of steps exceed 90° of phase, the phase is instead unwrapped against a fitted model (line + sinusoid fitted straight to the wrapped phasors, accepted only if coherence ≥ 0.8); if that fails the echo is marked ambiguous and not reported. The graph says which method was used.</li>
   <li><b>Analysis rate:</b> movement analysis reruns at most once per second of beep time.</li>
   <li><b>Finding candidates:</b> for every distance, the variation of the complex echo over the window is computed; peaks above 2× the median variation are candidates (max 6). Static echoes don’t vary, so they are ignored.</li>
-  <li><b>Period:</b> fine-distance series linearly interpolated onto a uniform time grid (step = median cycle length), straight-line trend removed, periodogram peak between 2/window and the Nyquist limit, refined by parabolic interpolation.</li>
-  <li><b>Size & confidence:</b> least-squares fit of line + fundamental + 2nd harmonic on the original (non-resampled) samples. Movement = peak-to-peak of the periodic part. Confidence = share of the detrended variance explained by that fit (R²). Reported only if R² ≥ 50% and the spectral peak is ≥ 8× the median.</li>
+  <li><b>Period:</b> fine-distance series linearly interpolated onto a uniform time grid (step = median cycle length), slow drift removed by subtracting a least-squares quadratic trend, periodogram peak between 3/window (at least 3 full repeats must fit in the window, so with 30 s the slowest reportable period is 10 s) and the Nyquist limit. A peak sitting on that slowest edge is treated as slow drift (drift has most power at the slowest periods) and not reported; use a longer window to see slower repeats, refined by parabolic interpolation.</li>
+  <li><b>Size & confidence:</b> least-squares fit of quadratic trend + fundamental + 2nd harmonic on the original (non-resampled) samples. Movement = peak-to-peak of the periodic part. Confidence = share of the detrended variance explained by that fit (R²). An echo is added to the list after 2 analyses in a row with R² ≥ 50% and spectral peak ≥ 8× the median; it stays while R² ≥ 35% and peak ≥ 5×, and is removed after 3 analyses in a row below that.</li>
   <li><b>Bad cycles:</b> a cycle is ignored entirely (not analysed, not used as reference) if its direct path is weaker than 20 dB above noise or arrives more than 2.5 ms away from the learned delay – that means noise masked the beep.</li>
   <li><b>Phone moved:</b> compared with the average of the last 5 good cycles: echo-strength profile correlation &lt; 0.6, or direct path level change &gt; 6 dB, or ≥ 70% of the echo peaks (at least 4) jump in phase by &gt; 45°. Such cycles are skipped; if it lasts ≥ 3 cycles and ≥ 1 s, the history is cleared and the next 3 cycles are skipped.</li>
   <li><b>Limits:</b> movement is only sampled once per cycle; the fastest detectable repeat is half the cycle rate (shown live). Echoes come from all directions (floor, ceiling, walls); distance is straight-line.</li>
@@ -332,10 +332,10 @@ function fitCandidate(H, q, e, meanMag) {
     const t = j * dt; while (i < n - 2 && ts[i + 1] < t) i++;
     const f = (t - ts[i]) / (ts[i + 1] - ts[i]); g[j] = d[i] + Math.max(0, Math.min(1, f)) * (d[i + 1] - d[i]);
   }
-  // remove straight-line trend
-  { let st = 0, sg = 0, stt = 0, stg = 0; for (let j = 0; j < Ng; j++) { st += j; sg += g[j]; stt += j * j; stg += j * g[j]; }
-    const sl = (Ng * stg - st * sg) / (Ng * stt - st * st), ic = (sg - sl * st) / Ng; for (let j = 0; j < Ng; j++) g[j] -= ic + sl * j; }
-  const fmin = 2 / T, fmax = 0.5 / dt, NF = 400;
+  // remove slow drift: least-squares quadratic trend
+  { const jj = Float64Array.from(g, (_, j) => j / Ng), c = lstsq([new Float64Array(Ng).fill(1), jj, jj.map(v => v * v)], g);
+    if (c) for (let j = 0; j < Ng; j++) g[j] -= c[0] + c[1] * jj[j] + c[2] * jj[j] * jj[j]; }
+  const fmin = 3 / T, fmax = 0.5 / dt, NF = 400;   // at least 3 full repeats inside the window
   const base = { q, distCm: distM * 100, method, unwrap: unwrapNote, arcDeg: arc * 180 / Math.PI, dt, moving: false };
   if (!(fmax > fmin * 1.2)) return Object.assign(base, { note: 'window too short for this cycle rate' });
   const P = new Float64Array(NF);
@@ -351,14 +351,14 @@ function fitCandidate(H, q, e, meanMag) {
   const pratio = P[mb] / Math.max(1e-30, median(P));
 
   // least squares on original samples: line + fundamental + 2nd harmonic
-  const one = new Float64Array(n).fill(1), w = TAU * fBest;
-  const cols = [one, ts, ts.map(t => Math.cos(w * t)), ts.map(t => Math.sin(w * t)), ts.map(t => Math.cos(2 * w * t)), ts.map(t => Math.sin(2 * w * t))];
-  const cLin = lstsq(cols.slice(0, 2), d), cAll = lstsq(cols, d);
+  const one = new Float64Array(n).fill(1), w = TAU * fBest, tq = ts.map(t => (t / T) * (t / T));
+  const cols = [one, ts, ts.map(t => Math.cos(w * t)), ts.map(t => Math.sin(w * t)), ts.map(t => Math.cos(2 * w * t)), ts.map(t => Math.sin(2 * w * t)), tq];
+  const cLin = lstsq([one, ts, tq], d), cAll = lstsq(cols, d);
   if (!cLin || !cAll) return Object.assign(base, { note: 'fit failed' });
   let ssLin = 0, ssRes = 0;
   for (let i = 0; i < n; i++) {
-    const rl = d[i] - cLin[0] - cLin[1] * ts[i]; ssLin += rl * rl;
-    let m = 0; for (let c = 0; c < 6; c++) m += cAll[c] * cols[c][i]; ssRes += (d[i] - m) * (d[i] - m);
+    const rl = d[i] - cLin[0] - cLin[1] * ts[i] - cLin[2] * tq[i]; ssLin += rl * rl;
+    let m = 0; for (let c = 0; c < 7; c++) m += cAll[c] * cols[c][i]; ssRes += (d[i] - m) * (d[i] - m);
   }
   const R2 = ssLin > 0 ? Math.max(0, 1 - ssRes / ssLin) : 0;
   let lo = Infinity, hi = -Infinity;
@@ -370,7 +370,9 @@ function fitCandidate(H, q, e, meanMag) {
   const periodS = 1 / fBest;
   return Object.assign(base, {
     ppMm: hi - lo, periodS, perMin: 60 * fBest, periodCycles: periodS / dt, freqHz: fBest,
-    conf: R2, pratio, moving: R2 >= 0.5 && pratio >= 8 && unwrapNote !== 'ambiguous',
+    conf: R2, pratio, edge: mb <= 1,
+    moving: R2 >= 0.5 && pratio >= 8 && unwrapNote !== 'ambiguous' && mb > 1,
+    keep: R2 >= 0.35 && pratio >= 5 && unwrapNote !== 'ambiguous' && mb > 1,
     series: { t: ts, d, t0Abs: t0 }, coef: cAll
   });
 }
@@ -510,6 +512,27 @@ class Engine {
     if (this.onCycle) this.onCycle(res);
   }
 
+  // Show an echo only after 2 analyses in a row call it moving; keep it while it stays above a looser bar
+  // (confidence ≥ 35%, peak ratio ≥ 5) and drop it after 3 analyses in a row below that.
+  _stabilise(a) {
+    if (a.status !== 'ok') { if (a.status === 'paused') this.tracked = []; return a; }
+    const sepCm = this.lagToDist(this.sep) * 100 - this.lagToDist(0) * 100, tr = this.tracked || [];
+    const items = a.items.filter(i => i.conf !== undefined);
+    for (const t of tr) t.seen = false;
+    for (const it of items) {
+      let t = tr.find(t => Math.abs(t.distCm - it.distCm) < sepCm && Math.abs(Math.log(t.periodS / it.periodS)) < 0.3);
+      if (!t) { if (!it.moving) continue; t = { hits: 0, misses: 0, shown: false }; tr.push(t); }
+      t.seen = true; t.distCm = it.distCm; t.periodS = it.periodS; t.item = it;
+      if (it.moving) { t.hits++; t.misses = 0; if (t.hits >= 2) t.shown = true; }
+      else if (t.shown && it.keep) t.misses = 0;
+      else { t.hits = 0; t.misses++; }
+    }
+    for (const t of tr) if (!t.seen) { t.hits = 0; t.misses++; }
+    this.tracked = tr.filter(t => t.misses < 3 && (t.shown || t.hits > 0));
+    a.moving = this.tracked.filter(t => t.shown).map(t => t.item).sort((p, q) => p.distCm - q.distCm);
+    return a;
+  }
+
   _z(t, out) { // demodulated matched-filter output at fractional sample t (linear interpolation)
     const n = Math.floor(t), f = t - n, a = -((this.wc * n) % TAU), ca = Math.cos(a), sa = Math.sin(a);
     const cb = Math.cos(a - this.wc), sb = Math.sin(a - this.wc);
@@ -585,7 +608,7 @@ class Engine {
       res.skipped = true; res.warn.push('cycle unlike the previous ones – skipped');
     } else if (shift) {
       res.shift = true; res.warn.push('phone moved/touched – history reset'); this.suspect = 0;
-      this.hist = []; this.refMags = []; this.refA0 = []; this.refC = []; this.settle = 3;
+      this.hist = []; this.refMags = []; this.refA0 = []; this.refC = []; this.tracked = []; this.settle = 3;
       this.analysis = { status: 'paused', items: [], moving: [] };
     } else {
       this.suspect = 0;
@@ -595,7 +618,7 @@ class Engine {
       else {
         this.hist.push({ t: res.t, pr, pi, mag });
         while (this.hist.length && this.hist[0].t < res.t - this.windowS) this.hist.shift();
-        if (res.t - this.lastAnaT >= 1 || this.analysis.status !== 'ok') { this.analysis = analyzeMovement(this.hist, this); this.lastAnaT = res.t; }
+        if (res.t - this.lastAnaT >= 1 || this.analysis.status !== 'ok') { this.analysis = this._stabilise(analyzeMovement(this.hist, this)); this.lastAnaT = res.t; }
       }
     }
     res.analysis = this.analysis;
@@ -706,7 +729,8 @@ function stop() {
 function onCycle(res) {
   lastRes = res;
   log.push({ i: res.index, F: res.F, lat: res.latencyMs, micPeak: res.micPeak, micRms: res.micRms, t: res.t, len: res.len, listen: res.listenS, snr: res.snrDb, reason: res.reason,
-    shift: !!res.shift, skipped: !!res.skipped, echoes: res.echoes || [], warn: res.warn.slice() });
+    shift: !!res.shift, skipped: !!res.skipped,
+    mov: res.analysis ? (res.analysis.moving || []).map(m => `${m.distCm.toFixed(1)}:${m.ppMm.toFixed(2)}:${m.periodS.toFixed(2)}:${(100 * m.conf).toFixed(0)}`).join(' ') : '', echoes: res.echoes || [], warn: res.warn.slice() });
   if (log.length > 50000) log.shift();
   if (res.ok) wfRow(res);
   if (!drawPending) { drawPending = true; requestAnimationFrame(() => { drawPending = false; redraw(); }); }
@@ -859,7 +883,7 @@ function drawList() {
     for (const tr of body.querySelectorAll('tr')) tr.onclick = () => { selDist = +tr.dataset.d; drawList(); drawDetail(); };
   }
   const rejected = a && a.items ? a.items.filter(i => !i.moving) : [];
-  $('movInfo').textContent = rejected.length ? 'Checked but not repeating: ' + rejected.map(i => `${i.distCm.toFixed(0)} cm (${i.conf !== undefined ? (100 * i.conf).toFixed(0) + '%' : i.note || '-'})`).join(', ') : '';
+  $('movInfo').textContent = rejected.length ? 'Checked but not repeating: ' + rejected.map(i => `${i.distCm.toFixed(0)} cm (${i.conf !== undefined ? (100 * i.conf).toFixed(0) + '%' + (i.edge ? ' drift' : '') : i.note || '-'})`).join(', ') : '';
 }
 
 function drawDetail() {
@@ -868,10 +892,10 @@ function drawDetail() {
   const m = mv.find(x => selDist !== null && Math.abs(x.distCm - selDist) < 5);
   if (!m) { $('detailInfo').textContent = 'Tap a moving echo above.'; return; }
   const { t, d } = m.series, c = m.coef, n = t.length, wv = 2 * Math.PI * m.freqHz;
-  const det = Array.from(d, (v, i) => v - c[0] - c[1] * t[i]);
+  const T = t[n - 1], det = Array.from(d, (v, i) => v - c[0] - c[1] * t[i] - c[6] * (t[i] / T) * (t[i] / T));
   const per = tt => c[2] * Math.cos(wv * tt) + c[3] * Math.sin(wv * tt) + c[4] * Math.cos(2 * wv * tt) + c[5] * Math.sin(2 * wv * tt);
   let lo = Math.min(...det), hi = Math.max(...det); const pad = 0.1 * (hi - lo || 1); lo -= pad; hi += pad;
-  const x0 = 40, x1 = w - 6, top = 8, bot = h - 20, T = t[n - 1];
+  const x0 = 40, x1 = w - 6, top = 8, bot = h - 20;
   const X = v => x0 + v / T * (x1 - x0), Y = v => bot - (v - lo) / (hi - lo) * (bot - top);
   g.fillStyle = '#555'; g.font = '11px sans-serif'; g.textAlign = 'right';
   for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4; g.fillText(v.toFixed(2), x0 - 3, Y(v) + 4); g.fillStyle = '#f0f0f0'; g.fillRect(x0, Y(v), x1 - x0, 1); g.fillStyle = '#555'; }
@@ -881,7 +905,7 @@ function drawDetail() {
   g.strokeStyle = '#1f5fbf'; g.lineWidth = 1; g.beginPath();
   for (let i = 0; i < n; i++) { const x = X(t[i]), y = Y(det[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke();
   g.fillStyle = '#1f5fbf'; for (let i = 0; i < n; i++) { g.beginPath(); g.arc(X(t[i]), Y(det[i]), 2, 0, 7); g.fill(); }
-  $('detailInfo').textContent = `Echo at ${m.distCm.toFixed(1)} cm · fine distance in mm (+ = farther), straight-line trend removed. ` +
+  $('detailInfo').textContent = `Echo at ${m.distCm.toFixed(1)} cm · fine distance in mm (+ = farther), slow curved trend removed. ` +
     `Blue = one point per cycle, orange = fitted repeating pattern. Phase: ${m.method}, unwrapping: ${m.unwrap} (arc ${m.arcDeg.toFixed(0)}°).`;
 }
 
@@ -892,9 +916,9 @@ $('csvBtn').onclick = () => {
   if (eng) L.push(`# band_hz ${eng.f0}-${eng.f1}; fs ${eng.fs}; c 343; max_range_m ${eng.maxRange}; gap_cm ${eng.gap * 100}; window_s ${eng.windowS}; range_res_cm ${(eng.rangeRes * 100).toFixed(2)}; wavelength_mm ${(eng.lambda * 1000).toFixed(3)}`);
   if (trackSettings) L.push('# mic_settings_applied ' + JSON.stringify(trackSettings).replace(/,/g, ';'));
   if (ctxInfo) L.push('# audio ' + JSON.stringify(ctxInfo).replace(/,/g, ';'));
-  L.push('cycle,beep_time_s,beep_frame,cycle_len_s,listen_s,end_reason,latency_ms,direct_snr_db,mic_peak_dbfs,mic_rms_dbfs,phone_moved,skipped,warnings,echoes(dist_cm:strength_db:fine_mm)');
+  L.push('cycle,beep_time_s,beep_frame,cycle_len_s,listen_s,end_reason,latency_ms,direct_snr_db,mic_peak_dbfs,mic_rms_dbfs,phone_moved,skipped,warnings,moving_shown(dist_cm:pp_mm:period_s:conf%),echoes(dist_cm:strength_db:fine_mm)');
   for (const r of log) L.push([r.i, r.t.toFixed(5), r.F, r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.lat !== undefined ? r.lat.toFixed(3) : '', r.snr !== undefined ? r.snr.toFixed(1) : '', dB(r.micPeak), dB(r.micRms), r.shift ? 1 : 0, r.skipped ? 1 : 0,
-    '"' + r.warn.join('; ') + '"', r.echoes.map(e => `${e.distCm.toFixed(2)}:${e.db.toFixed(1)}:${e.fineMm.toFixed(3)}`).join(' ')].join(','));
+    '"' + r.warn.join('; ') + '"', r.mov || '', r.echoes.map(e => `${e.distCm.toFixed(2)}:${e.db.toFixed(1)}:${e.fineMm.toFixed(3)}`).join(' ')].join(','));
   const mv = eng ? eng.analysis.moving || [] : [];
   L.push(''); L.push('# moving echoes (at export)');
   L.push('dist_cm,movement_pp_mm,period_s,per_min,period_cycles,confidence,peak_ratio,phase_method');
