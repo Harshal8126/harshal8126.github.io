@@ -37,6 +37,8 @@
   <div class="row">
     <button id="startBtn" class="go">Start</button>
     <button id="csvBtn">Save CSV</button>
+    <button id="wavBtn">Save WAV</button>
+    <button id="testBtn">Test speaker</button>
   </div>
   <div class="row">
     <label>Band
@@ -54,6 +56,11 @@
         <option value="3" selected>3 m</option><option value="4">4 m</option>
       </select></label>
     <label>Speaker–mic gap <input id="gap" type="number" min="0" max="30" step="0.5" value="0"> cm</label>
+    <label>Output
+      <select id="route">
+        <option value="webaudio">Web Audio (default)</option>
+        <option value="element">Audio element (media route)</option>
+      </select></label>
     <label>Analysis window <input id="winS" type="number" min="10" max="60" step="5" value="30"> s</label>
   </div>
   <div class="muted" id="bandInfo"></div>
@@ -63,6 +70,12 @@
   <div id="status">Not running. Press Start, then keep the phone still on a table.</div>
   <div id="warn"></div>
 </div>
+
+<details class="box" id="diagBox" open>
+<summary>Diagnostics</summary>
+<div id="diag" style="font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap">Press “Test speaker” first (mic off): you should hear 5 clicks on 3–15 kHz. Then Start and listen again.</div>
+<div class="muted">“Save WAV” saves the last 10 s of raw microphone audio, with every beep time written inside the file, so the recording can be checked directly.</div>
+</details>
 
 <h2>1. Echo trace – current cycle</h2>
 <canvas id="trace"></canvas>
@@ -100,6 +113,7 @@
 <ol>
   <li><b>Beep:</b> Hann-windowed linear chirp, 10 ms. Range resolution c/(2·bandwidth) with c = 343 m/s.</li>
   <li><b>Detection:</b> matched filter against the complex (analytic) chirp, FFT overlap-save, so each output has envelope and phase.</li>
+  <li><b>Beep detection:</b> the beep has arrived when the matched-filter peak in a 10 ms block exceeds 30× (15 dB) the mean noise power. (Earlier versions used the block average, which diluted the short peak by ~18 dB.)</li>
   <li><b>Cycle end:</b> mean matched-filter power in non-overlapping 10 ms blocks must stay below 2× the noise floor (+3 dB) for 5 blocks (50 ms), and not before echoes from max range have returned. Safety max 5 s. If no beep is heard within 1 s the cycle is skipped.</li>
   <li><b>Noise floor:</b> median 10 ms block power during 1.5 s of silence before the first beep. After every cycle: floor ← 0.95·floor + 0.05·(power of the 50 ms quiet tail, clamped to ±50% of floor).</li>
   <li><b>Timing reference:</b> direct path = strongest matched-filter peak next to the first loud block; its time is refined by parabolic interpolation of the envelope. Every echo is measured relative to it (complex ratio), which cancels latency jitter, clock drift and gain changes.</li>
@@ -390,7 +404,7 @@ class Engine {
     this.rangeRes = this.c / (2 * (this.f1 - this.f0));
     this.edgeMargin = Math.max(0.05, this.rangeRes);
     this.win = Math.round(0.010 * this.fs); this.holdWins = 5; this.maxCycleS = 5;
-    this.noiseS = o.noiseS || 1.5; this.noBeepS = 1.0; this.quietFactor = 2; this.arriveFactor = 10;
+    this.noiseS = o.noiseS || 1.5; this.noBeepS = 1.0; this.quietFactor = 2; this.arrivePeakFactor = 30;
     const fs = this.fs, M = Math.round(this.chirpS * fs); this.M = M;
     this.play = new Float32Array(M);
     this.N = 2048; while (this.N < 4 * M) this.N *= 2;
@@ -443,12 +457,13 @@ class Engine {
       this.mfDone += V;
     }
   }
+  _winP(j) { let m = 0; const a = j * this.win, b = a + this.win; for (let n = a; n < b; n++) { const v = this.yr[n] * this.yr[n] + this.yi[n] * this.yi[n]; if (v > m) m = v; } return m; }
   _winE(j) { let s = 0; const a = j * this.win, b = a + this.win; for (let n = a; n < b; n++) s += this.yr[n] * this.yr[n] + this.yi[n] * this.yi[n]; return s / this.win; }
 
   _finishNoise() {
     this.mfDone = 0; this._mf();
     const E = []; for (let j = 0; (j + 1) * this.win <= this.mfDone; j++) E.push(this._winE(j));
-    this.floor = median(E);
+    this.floor = Math.max(median(E), 1e-14);
     if (this.onNoise) this.onNoise(this.floor);
     this._startCycle();
   }
@@ -466,7 +481,7 @@ class Engine {
     while ((c.nWin + 1) * win <= this.mfDone) {
       const j = c.nWin++, E = this._winE(j); c.E.push(E);
       if (c.arr < 0) {
-        if (E > this.floor * this.arriveFactor) c.arr = j;
+        if (this._winP(j) > this.floor * this.arrivePeakFactor) c.arr = j;
         else if ((j + 1) * win > this.noBeepS * fs) return this._end('nobeep', j);
       } else {
         c.quiet = E < this.floor * this.quietFactor ? c.quiet + 1 : 0;
@@ -483,7 +498,8 @@ class Engine {
       const tail = s / (j - a + 1);
       this.floor = 0.95 * this.floor + 0.05 * Math.min(1.5 * this.floor, Math.max(this.floor / 1.5, tail));
     }
-    const res = { index: this.cycleIndex++, F: c.F, t: c.F / this.fs, listenS: (j + 1) * this.win / this.fs, reason, ok: false, warn: [], floor: this.floor };
+    let pk = 0, ss = 0; for (let n = 0; n < this.len; n++) { const v = this.raw[n]; ss += v * v; if (Math.abs(v) > pk) pk = Math.abs(v); }
+    const res = { index: this.cycleIndex++, F: c.F, micPeak: pk, micRms: Math.sqrt(ss / Math.max(1, this.len)), t: c.F / this.fs, listenS: (j + 1) * this.win / this.fs, reason, ok: false, warn: [], floor: this.floor };
     if (reason === 'nobeep') res.warn.push('no beep heard – raise volume');
     if (reason === 'max') res.warn.push('cycle hit 5 s limit – room very echoey or noisy');
     if (reason !== 'nobeep') this._analyse(c, res);
@@ -596,6 +612,7 @@ class Rec extends AudioWorkletProcessor {
 registerProcessor('sonar-rec', Rec);`;
 
 let ctx = null, stream = null, eng = null, outGain = null, wakeLock = null, running = false;
+let audioEl = null, trackSettings = null, ctxInfo = null, ring = null, ringN = 0, ringEnd = 0, beepFrames = [];
 let log = [], lastRes = null, selDist = null, micPeak = 0, micPeakT = 0, drawPending = false;
 const wfOff = document.createElement('canvas');
 
@@ -626,11 +643,17 @@ async function start() {
   const node = new AudioWorkletNode(ctx, 'sonar-rec', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
   const mute = ctx.createGain(); mute.gain.value = 0;
   src.connect(node); node.connect(mute); mute.connect(ctx.destination);
-  outGain = ctx.createGain(); outGain.gain.value = volGain(); outGain.connect(ctx.destination);
+  outGain = ctx.createGain(); outGain.gain.value = volGain();
+  await connectOutput(ctx, outGain, $('route').value);
+  const tr = stream.getAudioTracks()[0];
+  trackSettings = tr && tr.getSettings ? tr.getSettings() : {};
+  ctxInfo = { sampleRate: fs, baseLatency: ctx.baseLatency, outputLatency: ctx.outputLatency, route: $('route').value, band: [f0, f1], volume: $('vol').value + '%' };
+  ring = new Float32Array(Math.round(10 * fs)); ringN = 0; ringEnd = 0; beepFrames = [];
   const buf = ctx.createBuffer(1, eng.play.length, fs); buf.copyToChannel(eng.play, 0);
   eng.requestBeep = () => {
     const when = ctx.currentTime + 0.02, s = ctx.createBufferSource();
-    s.buffer = buf; s.connect(outGain); s.start(when); return Math.round(when * fs);
+    s.buffer = buf; s.connect(outGain); s.start(when); const F = Math.round(when * fs);
+    beepFrames.push(F); if (beepFrames.length > 500) beepFrames.shift(); return F;
   };
   eng.onNoise = () => setStatus();
   eng.onCycle = onCycle;
@@ -638,6 +661,7 @@ async function start() {
     if (!running) return;
     const { frame, data } = ev.data;
     let pk = 0; for (let i = 0; i < data.length; i++) pk = Math.max(pk, Math.abs(data[i]));
+    for (let i = 0; i < data.length; i++) { ring[ringN % ring.length] = data[i]; ringN++; } ringEnd = frame + data.length;
     const tnow = performance.now(); if (pk > micPeak || tnow - micPeakT > 700) { micPeak = pk; micPeakT = tnow; }
     if (eng.now !== null && frame > eng.now) { // dropped audio: fill gap with zeros (max 0.5 s)
       const gap = Math.min(frame - eng.now, Math.round(0.5 * fs)); eng.feed(new Float32Array(gap)); eng.now = frame;
@@ -648,7 +672,8 @@ async function start() {
   log = []; lastRes = null; selDist = null;
   wfOff.width = eng.K; wfOff.height = 300; const g = wfOff.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, wfOff.width, wfOff.height);
   running = true; $('startBtn').textContent = 'Stop'; $('startBtn').className = 'stop';
-  for (const id of ['band', 'maxRange', 'gap', 'winS']) $(id).disabled = true;
+  for (const id of ['band', 'maxRange', 'gap', 'winS', 'route']) $(id).disabled = true;
+  showDiag();
   $('warn').textContent = ''; $('status').textContent = 'Measuring noise floor – stay quiet for 1.5 s…';
   wake();
 }
@@ -660,17 +685,73 @@ function stop() {
   if (wakeLock) { wakeLock.release().catch(() => { }); wakeLock = null; }
   ctx = stream = outGain = null;
   $('startBtn').textContent = 'Start'; $('startBtn').className = 'go';
-  for (const id of ['band', 'maxRange', 'gap', 'winS']) $(id).disabled = false;
+  for (const id of ['band', 'maxRange', 'gap', 'winS', 'route']) $(id).disabled = false;
+  if (audioEl) { audioEl.pause(); audioEl.srcObject = null; audioEl = null; }
 }
 
 function onCycle(res) {
   lastRes = res;
-  log.push({ i: res.index, t: res.t, len: res.len, listen: res.listenS, snr: res.snrDb, reason: res.reason,
+  log.push({ i: res.index, F: res.F, micPeak: res.micPeak, micRms: res.micRms, t: res.t, len: res.len, listen: res.listenS, snr: res.snrDb, reason: res.reason,
     shift: !!res.shift, skipped: !!res.skipped, echoes: res.echoes || [], warn: res.warn.slice() });
   if (log.length > 50000) log.shift();
   if (res.ok) wfRow(res);
   if (!drawPending) { drawPending = true; requestAnimationFrame(() => { drawPending = false; redraw(); }); }
 }
+
+async function connectOutput(c, node, route) {
+  if (route === 'element') {
+    const dest = c.createMediaStreamDestination(); node.connect(dest);
+    audioEl = new Audio(); audioEl.srcObject = dest.stream; await audioEl.play();
+  } else node.connect(c.destination);
+}
+
+const dB = v => v > 0 ? (20 * Math.log10(v)).toFixed(1) : '-inf';
+function showDiag() {
+  if (!trackSettings) return;
+  const ts = trackSettings, recent = log.slice(-30), heard = recent.filter(r => r.reason !== 'nobeep').length;
+  const snrs = recent.filter(r => r.snr !== undefined).map(r => r.snr).sort((a, b) => a - b);
+  const flag = v => v === undefined ? '(not reported)' : v ? 'ON  <-- requested off' : 'off';
+  const lines = [
+    `Mic as applied by the phone: echoCancellation ${flag(ts.echoCancellation)}, noiseSuppression ${flag(ts.noiseSuppression)}, autoGainControl ${flag(ts.autoGainControl)}`,
+    `  sampleRate ${ts.sampleRate || '?'}, channels ${ts.channelCount || '?'}, device "${ts.label || ts.deviceId || '?'}"`,
+    `Audio: context ${ctxInfo.sampleRate} Hz, baseLatency ${ctxInfo.baseLatency !== undefined ? (1000 * ctxInfo.baseLatency).toFixed(1) + ' ms' : '?'}, outputLatency ${ctxInfo.outputLatency !== undefined ? (1000 * ctxInfo.outputLatency).toFixed(1) + ' ms' : '?'}, output route ${ctxInfo.route}`,
+    `Last ${recent.length} cycles: beep heard in ${heard}; direct SNR median ${snrs.length ? snrs[snrs.length >> 1].toFixed(1) + ' dB' : '–'} (need ≥ 30 dB)`
+  ];
+  if (recent.length) { const r = recent[recent.length - 1]; lines.push(`Mic during last cycle: peak ${dB(r.micPeak)} dBFS, rms ${dB(r.micRms)} dBFS`); }
+  $('diag').textContent = lines.join('\n');
+}
+
+$('testBtn').onclick = async () => {
+  const [f0, f1] = $('band').value.split(',').map(Number);
+  let c = ctx, temp = false;
+  if (!c) { c = new (window.AudioContext || window.webkitAudioContext)(); temp = true; await c.resume(); }
+  const e = new Sonar.Engine({ fs: c.sampleRate, f0, f1 });
+  const b = c.createBuffer(1, e.play.length, c.sampleRate); b.copyToChannel(e.play, 0);
+  const g = c.createGain(); g.gain.value = volGain();
+  if (temp) await connectOutput(c, g, $('route').value); else g.connect(outGain);
+  const t0 = c.currentTime + 0.1;
+  for (let k = 0; k < 5; k++) { const s = c.createBufferSource(); s.buffer = b; s.connect(g); s.start(t0 + 0.4 * k); }
+  $('diag').textContent = `Playing 5 beeps (${f0 / 1000}–${f1 / 1000} kHz, ${$('vol').value}%, ${running ? 'mic ON' : 'mic off'}, route ${$('route').value}). Did you hear them?` + (trackSettings ? '' : '\nThen press Start: if beeps become silent once the mic is on, the phone is routing sound to the earpiece – try Output: Audio element.');
+  if (temp) setTimeout(() => { c.close(); if (audioEl) { audioEl.pause(); audioEl = null; } }, 2600);
+};
+
+$('wavBtn').onclick = () => {
+  if (!ring || !ringN) { $('warn').textContent = 'No audio recorded yet – press Start first.'; return; }
+  const fs = ctxInfo.sampleRate, n = Math.min(ringN, ring.length), start = ringEnd - n;
+  const pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) { const v = ring[(ringN - n + i) % ring.length]; pcm[i] = Math.max(-32768, Math.min(32767, Math.round(v * 32767))); }
+  const meta = JSON.stringify({ wavStartFrame: start, fs, beepsAtSample: beepFrames.filter(F => F >= start && F < ringEnd).map(F => F - start),
+    band: ctxInfo.band, chirpMs: 10, window: 'hann', volume: ctxInfo.volume, route: ctxInfo.route, trackSettings, ctxInfo, ua: navigator.userAgent });
+  const mb = new TextEncoder().encode(meta + (meta.length % 2 ? ' ' : ''));
+  const listLen = 4 + 8 + mb.length, buf = new ArrayBuffer(44 + pcm.byteLength + 8 + listLen), v = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, buf.byteLength - 8, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, fs, true); v.setUint32(28, fs * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, pcm.byteLength, true); new Int16Array(buf, 44, n).set(pcm);
+  let o = 44 + pcm.byteLength; str(o, 'LIST'); v.setUint32(o + 4, listLen, true); str(o + 8, 'INFO'); str(o + 12, 'ICMT'); v.setUint32(o + 16, mb.length, true); new Uint8Array(buf, o + 20, mb.length).set(mb);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  a.download = 'sonar_raw_' + new Date().toISOString().replace(/[:.]/g, '-') + '.wav'; a.click();
+};
 
 function recentLens() { const L = []; for (let i = log.length - 1; i >= 0 && L.length < 10; i--) if (log[i].len) L.push(log[i].len); return L; }
 
@@ -794,8 +875,10 @@ $('csvBtn').onclick = () => {
   const L = [];
   L.push(`# phone sonar export ${new Date().toISOString()}`);
   if (eng) L.push(`# band_hz ${eng.f0}-${eng.f1}; fs ${eng.fs}; c 343; max_range_m ${eng.maxRange}; gap_cm ${eng.gap * 100}; window_s ${eng.windowS}; range_res_cm ${(eng.rangeRes * 100).toFixed(2)}; wavelength_mm ${(eng.lambda * 1000).toFixed(3)}`);
-  L.push('cycle,beep_time_s,cycle_len_s,listen_s,end_reason,direct_snr_db,phone_moved,skipped,warnings,echoes(dist_cm:strength_db:fine_mm)');
-  for (const r of log) L.push([r.i, r.t.toFixed(5), r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.snr !== undefined ? r.snr.toFixed(1) : '', r.shift ? 1 : 0, r.skipped ? 1 : 0,
+  if (trackSettings) L.push('# mic_settings_applied ' + JSON.stringify(trackSettings).replace(/,/g, ';'));
+  if (ctxInfo) L.push('# audio ' + JSON.stringify(ctxInfo).replace(/,/g, ';'));
+  L.push('cycle,beep_time_s,beep_frame,cycle_len_s,listen_s,end_reason,direct_snr_db,mic_peak_dbfs,mic_rms_dbfs,phone_moved,skipped,warnings,echoes(dist_cm:strength_db:fine_mm)');
+  for (const r of log) L.push([r.i, r.t.toFixed(5), r.F, r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.snr !== undefined ? r.snr.toFixed(1) : '', dB(r.micPeak), dB(r.micRms), r.shift ? 1 : 0, r.skipped ? 1 : 0,
     '"' + r.warn.join('; ') + '"', r.echoes.map(e => `${e.distCm.toFixed(2)}:${e.db.toFixed(1)}:${e.fineMm.toFixed(3)}`).join(' ')].join(','));
   const mv = eng ? eng.analysis.moving || [] : [];
   L.push(''); L.push('# moving echoes (at export)');
@@ -811,7 +894,7 @@ $('csvBtn').onclick = () => {
 };
 
 window.addEventListener('resize', () => { if (eng) redraw(); });
-setInterval(() => { if (running) setStatus(); }, 500);
+setInterval(() => { if (running) { setStatus(); showDiag(); } }, 500);
 </script>
 </body>
 </html>
