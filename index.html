@@ -1,572 +1,817 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pocket Sonar</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone sonar – moving echo finder</title>
 <style>
-:root{--bg:#07131c;--panel:#0d2130;--line:#1d3a4f;--ink:#d8ecf5;--dim:#7fa1b3;--acc:#3ee6c4;--warn:#ffb547;--bad:#ff6b6b}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-main{max-width:760px;margin:0 auto;padding:14px 16px 40px}
-h1{font-size:22px;margin:4px 0 2px;letter-spacing:.5px}h1 span{color:var(--acc)}
-.sub{color:var(--dim);margin:0 0 12px;font-size:14px}
-.tabs{display:flex;gap:6px;margin-bottom:12px}.tabs button{flex:1}
-button,select,input{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
-button{cursor:pointer}button.on,button.primary{background:var(--acc);color:#04221b;border-color:var(--acc);font-weight:600}
-button.stop{background:var(--bad);border-color:var(--bad);color:#2a0606;font-weight:600}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
-.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.row label{color:var(--dim);font-size:13px}
-.big{font-size:40px;font-weight:700;color:var(--acc);line-height:1.1;font-variant-numeric:tabular-nums}
-.small{font-size:13px;color:var(--dim)}.warn{color:var(--warn)}
-canvas{width:100%;display:block;border-radius:10px;background:#040c12}
-#ascan{height:190px}#bscan{height:240px}#kcv{height:200px}
-.chips button{min-width:44px}
-table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}
-th{color:var(--dim);font-weight:500}.hollow{color:var(--warn);font-weight:600}.solid{color:var(--acc)}
-.hide{display:none}details{color:var(--dim);font-size:14px}summary{cursor:pointer;color:var(--ink)}
-input[type=range]{padding:0;width:120px}
-</style></head><body><main>
-<h1>Pocket <span>Sonar</span></h1>
-<p class="sub">Your phone plays a sound you can barely hear and listens for the echoes.</p>
-<div class="tabs"><button id="tEcho" class="on">Echo</button><button id="tMap">Room map</button><button id="tKnock">Knock test</button></div>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 10px; background: #fafafa; color: #222; font-size: 15px; }
+  h1 { font-size: 18px; margin: 4px 0 8px; }
+  h2 { font-size: 15px; margin: 14px 0 4px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 6px 0; }
+  label { font-size: 14px; }
+  select, input[type=number] { font-size: 15px; padding: 3px; }
+  input[type=number] { width: 4.5em; }
+  button { font-size: 16px; padding: 8px 16px; border: 1px solid #888; border-radius: 6px; background: #fff; }
+  button.go { background: #1a7f37; color: #fff; border-color: #1a7f37; }
+  button.stop { background: #b42318; color: #fff; border-color: #b42318; }
+  .box { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+  #status { font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; }
+  #warn { color: #b42318; font-weight: 600; min-height: 1.2em; }
+  canvas { width: 100%; display: block; background: #fff; border: 1px solid #ddd; border-radius: 4px; }
+  #trace { height: 190px; } #wf { height: 220px; } #detail { height: 190px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { border-bottom: 1px solid #eee; padding: 5px 4px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.sel { background: #e8f1ff; }
+  tbody tr { cursor: pointer; }
+  .muted { color: #666; font-size: 13px; }
+  details { margin: 8px 0; } summary { cursor: pointer; font-weight: 600; }
+  ol, ul { padding-left: 20px; margin: 4px 0; } li { margin: 3px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>Phone sonar – moving echo finder</h1>
 
-<section id="pEcho">
- <div class="card">
+<div class="box">
   <div class="row">
-   <button id="bStart" class="primary">Start sonar</button>
-   <select id="band">
-    <option value="17000-20000">17–20 kHz · near-silent</option>
-    <option value="14000-20000" selected>14–20 kHz · faint hiss</option>
-    <option value="3000-15000">3–15 kHz · audible, sharpest</option>
-   </select>
-   <select id="range"><option value="100">Range 1 m</option><option value="200">2 m</option><option value="400" selected>4 m</option></select>
-   <select id="view"><option value="echo">Show: echoes</option><option value="motion">Show: movement only</option></select>
+    <button id="startBtn" class="go">Start</button>
+    <button id="csvBtn">Save CSV</button>
   </div>
-  <div class="row" style="margin-top:8px"><label>Volume</label><input id="lvl" type="range" min="0.05" max="1" step="0.05" value="0.6"><span class="small" id="resTxt"></span></div>
- </div>
- <div class="card">
-  <div class="small" id="lbl1">Clearest still object</div>
-  <div class="big" id="dist">—</div>
-  <div class="small" id="others">Point the bottom edge of the phone at a wall and press Start.</div>
-  <div class="small" id="qual" style="margin-top:4px"></div>
- </div>
- <div class="card"><div class="small" style="margin-bottom:6px">Echo strength by distance</div><canvas id="ascan"></canvas></div>
- <div class="card"><div class="small" style="margin-bottom:6px">Scan over time: sweep the phone slowly, like a ground radar. Bright = strong echo.</div><canvas id="bscan"></canvas>
-  <div class="row" style="margin-top:8px"><button id="bClear">Clear scan</button><button id="bCsv">Save CSV</button></div></div>
- <details class="card"><summary>Tips</summary>
-  <p>• On most phones the speaker and main mic are both on the <b>bottom edge</b>. Point that edge at what you want to measure.</p>
-  <p>• Hold still. Check it against a tape measure: put a wall 50 cm, 1 m and 2 m away.</p>
-  <p>• <b>Movement only</b> hides everything that stays still. Wave your hand 30–80 cm away and it lights up.</p>
-  <p>• No echo? Try 14–20 kHz or 3–15 kHz. Many phone speakers are weak above 18 kHz.</p>
-  <p>• The first ~15 cm is blind because the sound going straight from speaker to mic drowns it out.</p>
- </details>
-</section>
+  <div class="row">
+    <label>Band
+      <select id="band">
+        <option value="17000,20000">17–20 kHz (near-silent)</option>
+        <option value="14000,20000">14–20 kHz</option>
+        <option value="3000,15000">3–15 kHz (audible, strong)</option>
+      </select></label>
+    <label>Volume <input id="vol" type="range" min="0" max="100" value="60" style="vertical-align:middle"> <span id="volTxt">60%</span></label>
+  </div>
+  <div class="row">
+    <label>Max range
+      <select id="maxRange">
+        <option value="1">1 m</option><option value="2">2 m</option>
+        <option value="3" selected>3 m</option><option value="4">4 m</option>
+      </select></label>
+    <label>Speaker–mic gap <input id="gap" type="number" min="0" max="30" step="0.5" value="0"> cm</label>
+    <label>Analysis window <input id="winS" type="number" min="10" max="60" step="5" value="30"> s</label>
+  </div>
+  <div class="muted" id="bandInfo"></div>
+</div>
 
-<section id="pMap" class="hide">
- <div class="card">
-  <p class="small" style="margin-top:0">Hold the phone <b>flat, screen up</b>, at chest height, with the <b>bottom edge pointing away from you</b>. Press Start, then turn slowly on the spot through a full circle. Take about 40 s, and do it twice if you can.</p>
-  <div class="row"><button id="mStart" class="primary">Start mapping</button>
-   <select id="mRange"><option value="200">Range 2 m</option><option value="300" selected>3 m</option><option value="400">4 m</option></select>
-   <button id="mClear">Clear map</button><button id="mCsv">Save CSV</button></div>
-  <div class="small" id="mStat" style="margin-top:8px">Uses the sound band chosen on the Echo tab.</div>
- </div>
- <div class="card"><canvas id="mapcv" style="height:auto;aspect-ratio:1/1"></canvas>
-  <div class="small" style="margin-top:6px">Top = the direction you faced at Start. Bright = an echo that is stronger in that direction than elsewhere. White dots = the clearest object in each direction. Grey = not scanned yet.</div></div>
- <details class="card"><summary>How it works and its limits</summary>
-  <p>The gyroscope tags every scan with the direction the phone points. The speaker sends a bit more sound forward than backward, so an object straight ahead echoes a little louder. The map averages each direction and shows only what is <i>extra</i> in that direction.</p>
-  <p>This is a rough map, about one sector per 10–30°. Your own body is always behind the phone, so the first 25 cm is blanked. The ceiling and floor are the same in every direction, so they cancel out.</p>
- </details>
-</section>
+<div class="box">
+  <div id="status">Not running. Press Start, then keep the phone still on a table.</div>
+  <div id="warn"></div>
+</div>
 
-<section id="pKnock" class="hide">
- <div class="card">
-  <p class="small" style="margin-top:0">Knock on a wall or floor with your knuckle, using the same force each time. Knock 2–3 times on each spot. Then choose the next letter and knock on the next spot. Hollow areas ring <b>longer</b> and <b>lower</b>.</p>
-  <div class="row"><button id="kStart" class="primary">Start listening</button><span class="small" id="kStat"></span></div>
-  <div class="row chips" style="margin-top:8px"><label>Spot</label>
-   <button class="on">A</button><button>B</button><button>C</button><button>D</button><button>E</button><button>F</button><button>G</button><button>H</button></div>
- </div>
- <div class="card"><div class="small" id="kLast" style="margin-bottom:6px">Last knock</div><canvas id="kcv"></canvas></div>
- <div class="card"><table><thead><tr><th>Spot</th><th>Knocks</th><th>Ring</th><th>Pitch</th><th>Result</th></tr></thead><tbody id="kTab"><tr><td colspan="5" class="small">No knocks yet</td></tr></tbody></table>
-  <div class="row" style="margin-top:8px"><button id="kClear">Clear</button><button id="kCsv">Save CSV</button></div></div>
-</section>
+<h2>1. Echo trace – current cycle</h2>
+<canvas id="trace"></canvas>
+<div class="muted">Echo strength (dB relative to the direct speaker→mic sound) vs straight-line distance. Dashed line = noise level.</div>
 
-<details class="card"><summary>Can this find hidden rooms?</summary>
- <p>The echo view cannot see through walls or the ground. When sound in air hits a wall or soil, about 99.9% of it bounces back, so all you see is the surface. It is good for distances, room shape and movement.</p>
- <p>Real searches for hidden rooms use ground-penetrating radar, seismic waves, or muons (as at the Great Pyramid). LiDAR sees through trees, not through the ground.</p>
- <p>The closest a phone gets is <b>Knock test</b>. A knock makes the wall itself vibrate, and a cavity behind it changes the ring. Inspectors use the same "tap test" to find hollow tiles and loose plaster.</p>
+<h2>2. Cycles waterfall</h2>
+<canvas id="wf"></canvas>
+<div class="muted">Newest cycle at top, one row per cycle. Brighter = stronger echo. Orange ticks = moving echoes. Red row = phone moved (history reset).</div>
+
+<h2>3. Moving echoes</h2>
+<div class="box" style="padding:0">
+<table>
+  <thead><tr><th>Distance</th><th>Movement</th><th>Period</th><th>Per min</th><th>Confidence</th></tr></thead>
+  <tbody id="movBody"><tr><td colspan="5" class="muted">–</td></tr></tbody>
+</table>
+</div>
+<div class="muted" id="movInfo"></div>
+
+<h2>4. Fine distance over time</h2>
+<canvas id="detail"></canvas>
+<div class="muted" id="detailInfo">Tap a moving echo above.</div>
+
+<details>
+<summary>How to use</summary>
+<ol>
+  <li>Put the phone flat and still on a table, speaker side free. Press <b>Start</b> and allow the microphone. Stay quiet for the first 1.5 s (noise measurement).</li>
+  <li>Check the status line: “direct” should be at least 25–30 dB above noise. If not, raise the volume or try 14–20 kHz.</li>
+  <li>Sit 40–100 cm away and breathe slowly and steadily. After about the analysis window (30 s) a moving echo should appear in the list.</li>
+  <li>Don’t touch the phone while measuring. Touching it resets the history.</li>
+</ol>
 </details>
-</main>
-<script>
-//DSP-START
-const C_SOUND = 343;
-function makeFFT(n){
-  const lev = Math.round(Math.log2(n)), rev = new Uint32Array(n);
-  for(let i=0;i<n;i++){ let r=0,x=i; for(let b=0;b<lev;b++){ r=(r<<1)|(x&1); x>>=1; } rev[i]=r; }
-  const cs = new Float64Array(n/2), sn = new Float64Array(n/2);
-  for(let i=0;i<n/2;i++){ cs[i]=Math.cos(2*Math.PI*i/n); sn[i]=Math.sin(2*Math.PI*i/n); }
-  return function(re, im, inv){
-    for(let i=0;i<n;i++){ const j=rev[i]; if(j>i){ let t=re[i]; re[i]=re[j]; re[j]=t; t=im[i]; im[i]=im[j]; im[j]=t; } }
-    for(let size=2; size<=n; size<<=1){
-      const half=size>>1, step=n/size;
-      for(let i=0;i<n;i+=size){
-        for(let j=0,k=0;j<half;j++,k+=step){
-          const c=cs[k], s=inv?sn[k]:-sn[k], a=i+j, b=a+half;
-          const tr=re[b]*c-im[b]*s, ti=re[b]*s+im[b]*c;
-          re[b]=re[a]-tr; im[b]=im[a]-ti; re[a]+=tr; im[a]+=ti;
+
+<details>
+<summary>What it does, and every approximation</summary>
+<ol>
+  <li><b>Beep:</b> Hann-windowed linear chirp, 10 ms. Range resolution c/(2·bandwidth) with c = 343 m/s.</li>
+  <li><b>Detection:</b> matched filter against the complex (analytic) chirp, FFT overlap-save, so each output has envelope and phase.</li>
+  <li><b>Cycle end:</b> mean matched-filter power in non-overlapping 10 ms blocks must stay below 2× the noise floor (+3 dB) for 5 blocks (50 ms), and not before echoes from max range have returned. Safety max 5 s. If no beep is heard within 1 s the cycle is skipped.</li>
+  <li><b>Noise floor:</b> median 10 ms block power during 1.5 s of silence before the first beep. After every cycle: floor ← 0.95·floor + 0.05·(power of the 50 ms quiet tail, clamped to ±50% of floor).</li>
+  <li><b>Timing reference:</b> direct path = strongest matched-filter peak next to the first loud block; its time is refined by parabolic interpolation of the envelope. Every echo is measured relative to it (complex ratio), which cancels latency jitter, clock drift and gain changes.</li>
+  <li><b>Echo profile:</b> sampled at whole-sample lags from the (fractional) direct-path time; the demodulated signal is linearly interpolated between samples. Echo peak distances use parabolic interpolation. Distance = (c·delay + speaker–mic gap)/2. The first 15 cm and the last max(5 cm, 1 resolution cell) before max range are ignored.</li>
+  <li><b>Fine distance:</b> phase of each echo relative to the direct path, displacement = −Δphase·λ/(4π), unwrapped over time. A static reflector at the same distance adds a constant phasor; it is removed by fitting a circle to the echo’s phasor arc (Kåsa algebraic fit, then geometric least-squares refinement) only when that centre is well defined: arc ≥ 60° around it and the points' distance from it varies less than half as much as their distance from zero. Otherwise the raw phase (centre at zero) is used, which under-reads small movements if a static reflector sits at the same distance. Plain unwrapping needs the echo to move less than λ/4 between two cycles (4.6 mm at 18.5 kHz). If more than 10% of steps exceed 90° of phase, the phase is instead unwrapped against a fitted model (line + sinusoid fitted straight to the wrapped phasors, accepted only if coherence ≥ 0.8); if that fails the echo is marked ambiguous and not reported. The graph says which method was used.</li>
+  <li><b>Analysis rate:</b> movement analysis reruns at most once per second of beep time.</li>
+  <li><b>Finding candidates:</b> for every distance, the variation of the complex echo over the window is computed; peaks above 2× the median variation are candidates (max 6). Static echoes don’t vary, so they are ignored.</li>
+  <li><b>Period:</b> fine-distance series linearly interpolated onto a uniform time grid (step = median cycle length), straight-line trend removed, periodogram peak between 2/window and the Nyquist limit, refined by parabolic interpolation.</li>
+  <li><b>Size & confidence:</b> least-squares fit of line + fundamental + 2nd harmonic on the original (non-resampled) samples. Movement = peak-to-peak of the periodic part. Confidence = share of the detrended variance explained by that fit (R²). Reported only if R² ≥ 50% and the spectral peak is ≥ 8× the median.</li>
+  <li><b>Phone moved:</b> compared with the average of the last 5 cycles: echo-strength profile correlation &lt; 0.8, or direct path level change &gt; 3 dB, or ≥ 60% of the echo peaks (at least 3) jump in phase by &gt; 45°. Such cycles are skipped; if it lasts ≥ 3 cycles and ≥ 0.3 s, the history is cleared and the next 3 cycles are skipped.</li>
+  <li><b>Limits:</b> movement is only sampled once per cycle; the fastest detectable repeat is half the cycle rate (shown live). Echoes come from all directions (floor, ceiling, walls); distance is straight-line.</li>
+</ol>
+</details>
+
+<!-- ================= DSP (no DOM; also run by the Node test) ================= -->
+<script id="dsp">
+const Sonar = (() => {
+'use strict';
+const TAU = 2 * Math.PI;
+
+class FFT {
+  constructor(n) {
+    this.n = n; this.cos = new Float64Array(n / 2); this.sin = new Float64Array(n / 2);
+    for (let i = 0; i < n / 2; i++) { this.cos[i] = Math.cos(-TAU * i / n); this.sin[i] = Math.sin(-TAU * i / n); }
+    this.rev = new Uint32Array(n);
+    for (let i = 1, j = 0; i < n; i++) { let b = n >> 1; for (; j & b; b >>= 1) j ^= b; j ^= b; this.rev[i] = j; }
+  }
+  fwd(re, im) {
+    const n = this.n, rev = this.rev;
+    for (let i = 1; i < n; i++) { const j = rev[i]; if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >> 1, step = n / len;
+      for (let i = 0; i < n; i += len) {
+        for (let k = 0; k < half; k++) {
+          const wr = this.cos[k * step], wi = this.sin[k * step], a = i + k, b = a + half;
+          const xr = re[b] * wr - im[b] * wi, xi = re[b] * wi + im[b] * wr;
+          re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi;
         }
       }
     }
-    if(inv){ for(let i=0;i<n;i++){ re[i]/=n; im[i]/=n; } }
-  };
-}
-// Periodic band-limited sweep (Schroeder phases): low crest factor, smooth band edges, loops seamlessly.
-function makeProbe(sr, P, f1, f2, fft){
-  const re=new Float64Array(P), im=new Float64Array(P);
-  const k1=Math.ceil(f1*P/sr), k2=Math.floor(f2*P/sr), K=k2-k1+1;
-  for(let k=k1;k<=k2;k++){
-    const u=(k-k1+0.5)/K, w=Math.sin(Math.PI*u), j=k-k1, ph=Math.PI*j*j/K;
-    re[k]=w*Math.cos(ph); im[k]=w*Math.sin(ph); re[P-k]=re[k]; im[P-k]=-im[k];
-  }
-  fft(re, im, true);
-  let pk=0; for(let i=0;i<P;i++) pk=Math.max(pk, Math.abs(re[i]));
-  const x=new Float32Array(P); for(let i=0;i<P;i++) x[i]=re[i]/pk;
-  const Xr=new Float64Array(P), Xi=new Float64Array(P); for(let i=0;i<P;i++) Xr[i]=x[i];
-  fft(Xr, Xi, false);
-  return {x, k1, k2, Xr, Xi};
-}
-class Sonar{
-  constructor(sr, f1, f2, maxCm){
-    this.sr=sr; this.P=8192; this.fft=makeFFT(this.P); this.f1=f1; this.f2=f2;
-    this.pr=makeProbe(sr, this.P, f1, f2, this.fft);
-    this.cmPerTap=C_SOUND/(2*sr)*100;
-    this.res=Math.max(2, Math.round(sr/(f2-f1)));        // taps per resolution cell
-    this.resCm=C_SOUND/(2*(f2-f1))*100;
-    this.re=new Float64Array(this.P); this.im=new Float64Array(this.P);
-    this.snrDb=0; this.n=0; this.setRange(maxCm);
-  }
-  setRange(maxCm){ this.M=Math.min(this.P/2-1, Math.ceil(maxCm/this.cmPerTap)); this.env=null; }
-  process(win){
-    const {P, re, im, pr}=this, mask=P-1;
-    for(let i=0;i<P;i++){ re[i]=win[i]; im[i]=0; }
-    this.fft(re, im, false);
-    for(let k=0;k<P;k++){
-      if(k>=pr.k1 && k<=pr.k2){ const a=re[k], b=im[k], c=pr.Xr[k], d=pr.Xi[k]; re[k]=2*(a*c+b*d); im[k]=2*(b*c-a*d); }
-      else { re[k]=0; im[k]=0; }
-    }
-    this.fft(re, im, true);                                   // complex (analytic) echo profile, circular
-    let n0=0, best=-1;
-    for(let i=0;i<P;i++){ const v=re[i]*re[i]+im[i]*im[i]; if(v>best){ best=v; n0=i; } }  // direct speaker->mic path
-    if(!(best>0)) return false;
-    const h0r=re[n0], h0i=im[n0], M=this.M;
-    const gr=new Float32Array(M+1), gi=new Float32Array(M+1), a=new Float32Array(M+1);
-    for(let m=0;m<=M;m++){
-      const j=(n0+m)&mask, xr=re[j], xi=im[j];
-      gr[m]=(xr*h0r+xi*h0i)/best; gi[m]=(xi*h0r-xr*h0i)/best; a[m]=Math.hypot(gr[m], gi[m]);
-    }
-    const fl=[]; for(let o=P/2;o<P-64;o+=16){ const j=(n0+o)&mask; fl.push(Math.hypot(re[j], im[j])); }
-    fl.sort((x,y)=>x-y); const snr=20*Math.log10(Math.sqrt(best)/(fl[fl.length>>1]+1e-12));
-    this.snrDb = this.n ? 0.9*this.snrDb+0.1*snr : snr;
-    if(!this.env){ this.env=new Float32Array(M+1); this.bgR=Float32Array.from(gr); this.bgI=Float32Array.from(gi); this.mot=new Float32Array(M+1); }
-    for(let m=0;m<=M;m++){
-      const dr=gr[m]-this.bgR[m], di=gi[m]-this.bgI[m];
-      this.mot[m]=0.5*this.mot[m]+0.5*Math.hypot(dr, di);
-      this.bgR[m]+=0.08*dr; this.bgI[m]+=0.08*di;
-      // Echo view = coherent (phase-aligned) average: still objects add up, fluctuating reverb/noise cancels.
-      this.env[m]=Math.hypot(this.bgR[m], this.bgI[m]);
-    }
-    this.raw=a; this.n++; return true;
-  }
-  db(view){
-    const src = view==='motion' ? this.mot : this.env, M=this.M, out=new Float32Array(M+1);
-    for(let m=0;m<=M;m++){ const g=Math.max(1, Math.sqrt(m*this.cmPerTap/25)); out[m]=20*Math.log10(src[m]*g+1e-9); }
-    return out;
-  }
-  // Peaks ranked by how far they stand above their own neighbourhood (±40 cm), not by absolute level,
-  // so distant reverb boosted by range gain can't win. If motDb is given, also report "steady" =
-  // echo minus fluctuation in dB: a real still object is well above its own flicker.
-  peaks(db, minCm, maxN=3, above=6, motDb=null){
-    const M=this.M, m0=Math.min(M, Math.ceil(minCm/this.cmPerTap)), W=this.res, L=Math.round(40/this.cmPerTap), vals=[];
-    for(let m=m0;m<=M;m++) vals.push(db[m]);
-    vals.sort((x,y)=>x-y); const floor=vals[vals.length>>1], out=[];
-    const pre=new Float64Array(M+2); for(let m=0;m<=M;m++) pre[m+1]=pre[m]+db[m];
-    for(let m=m0;m<=M-W;m++){           // skip the last cell: anything just past the range limit leaks in there
-      const v=db[m], a=Math.max(m0, m-L), b=Math.min(M, m+L), loc=(pre[b+1]-pre[a])/(b-a+1);
-      if(v<loc+above) continue; let ok=true;
-      for(let j=Math.max(0,m-W); j<=Math.min(M,m+W); j++){ if(db[j]>v || (db[j]===v && j<m)){ ok=false; break; } }
-      if(!ok) continue;
-      const steady = motDb ? v-motDb[m] : null;
-      if(motDb && steady<3) continue;
-      let off=0; if(m>0 && m<M){ const p=db[m-1], q=db[m+1], den=p-2*v+q; if(den<0) off=Math.max(-0.5, Math.min(0.5, 0.5*(p-q)/den)); }
-      out.push({m, cm:(m+off)*this.cmPerTap, db:v, above:v-loc, steady});
-    }
-    out.sort((x,y)=>y.above-x.above); return {floor, list:out.slice(0, maxN)};
   }
 }
-// Knock analysis: how long the surface rings and how low it sounds.
-function analyzeKnock(x, sr, noiseRms){
-  const L=x.length, rel=Math.exp(-1/(0.005*sr)), env=new Float32Array(L);
-  let e=0, pk=0, ip=0, mx=0;
-  for(let i=0;i<L;i++){ const v=Math.abs(x[i]); if(v>mx) mx=v; e = v>e ? v : rel*e; env[i]=e; if(e>pk){ pk=e; ip=i; } }
-  const thr=Math.max(pk*0.1, 3*(noiseRms||0)); let last=ip;
-  for(let i=L-1;i>ip;i--){ if(env[i]>thr){ last=i; break; } }
-  const N=8192, fft=makeFFT(N), re=new Float64Array(N), im=new Float64Array(N), s0=Math.max(0, ip-Math.round(0.002*sr));
-  for(let i=0;i<N && s0+i<L;i++){ re[i]=x[s0+i]*(0.5-0.5*Math.cos(2*Math.PI*i/(N-1))); }
-  fft(re, im, false);
-  const kLo=Math.ceil(60*N/sr), kHi=Math.floor(6000*N/sr), spec=new Float32Array(kHi+1);
-  let sw=0, sm=0, lo=0, pkK=kLo, pkV=0;
-  for(let k=kLo;k<=kHi;k++){ const m=Math.hypot(re[k], im[k]); spec[k]=m; const p=m*m; sw+=p*k; sm+=p; if(k*sr/N<400) lo+=p; if(m>pkV){ pkV=m; pkK=k; } }
-  return {ringMs:(last-ip)/sr*1000, peakHz:pkK*sr/N, centroidHz: sm>0 ? sw/sm*sr/N : 0, lowFrac: sm>0 ? lo/sm : 0,
-          clipped: mx>0.98, env, spec, ip, binHz:sr/N, peak:pk};
+
+function median(arr) {
+  const a = Array.from(arr).sort((x, y) => x - y), n = a.length;
+  return n ? (n % 2 ? a[(n - 1) / 2] : 0.5 * (a[n / 2 - 1] + a[n / 2])) : 0;
 }
-function knockVerdicts(groups){
-  const ks=Object.keys(groups); if(ks.length<2) return {};
-  const h={}; for(const k of ks){ const g=groups[k]; h[k]=g.ring/Math.max(50, g.cent)*1000; }
-  const v=ks.map(k=>h[k]).sort((a,b)=>a-b), med=v.length%2 ? v[v.length>>1] : 0.5*(v[v.length/2-1]+v[v.length/2]);
-  const out={}; for(const k of ks){ const r=h[k]/med; out[k]= r>1.5 ? 'Hollow?' : r>1.2 ? 'Maybe hollow' : 'Solid'; }
+
+function solve(A, b) { // Gaussian elimination with partial pivoting (small systems)
+  const n = b.length; A = A.map(r => r.slice()); b = b.slice();
+  for (let i = 0; i < n; i++) {
+    let p = i; for (let r = i + 1; r < n; r++) if (Math.abs(A[r][i]) > Math.abs(A[p][i])) p = r;
+    if (Math.abs(A[p][i]) < 1e-300) return null;
+    [A[i], A[p]] = [A[p], A[i]]; [b[i], b[p]] = [b[p], b[i]];
+    for (let r = i + 1; r < n; r++) { const f = A[r][i] / A[i][i]; for (let c = i; c < n; c++) A[r][c] -= f * A[i][c]; b[r] -= f * b[i]; }
+  }
+  const x = new Array(n);
+  for (let i = n - 1; i >= 0; i--) { let s = b[i]; for (let c = i + 1; c < n; c++) s -= A[i][c] * x[c]; x[i] = s / A[i][i]; }
+  return x.every(Number.isFinite) ? x : null;
+}
+
+function lstsq(cols, y) { // columns: arrays of length n
+  const p = cols.length, n = y.length, A = [], b = [];
+  for (let i = 0; i < p; i++) {
+    A.push(new Array(p).fill(0)); let s = 0;
+    for (let k = 0; k < n; k++) s += cols[i][k] * y[k];
+    b.push(s);
+    for (let j = 0; j < p; j++) { let t = 0; for (let k = 0; k < n; k++) t += cols[i][k] * cols[j][k]; A[i][j] = t; }
+  }
+  return solve(A, b);
+}
+
+function circleFit(x, y) { // Kåsa algebraic fit, data centred first
+  const n = x.length; let mx = 0, my = 0;
+  for (let i = 0; i < n; i++) { mx += x[i]; my += y[i]; } mx /= n; my /= n;
+  let sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0, sz = 0;
+  for (let i = 0; i < n; i++) {
+    const u = x[i] - mx, v = y[i] - my, z = u * u + v * v;
+    sxx += u * u; syy += v * v; sxy += u * v; sxz += u * z; syz += v * z; sz += z;
+  }
+  const s = solve([[sxx, sxy, 0], [sxy, syy, 0], [0, 0, n]], [-sxz, -syz, -sz]);
+  if (!s) return null;
+  const cx = -s[0] / 2, cy = -s[1] / 2, r2 = cx * cx + cy * cy - s[2];
+  if (!(r2 > 0)) return null;
+  // geometric refinement (Gauss–Newton on distance-to-circle residuals) to remove the algebraic fit's short-arc bias
+  let a = cx + mx, b = cy + my, r = Math.sqrt(r2);
+  for (let it = 0; it < 20; it++) {
+    const J = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], g = [0, 0, 0];
+    for (let i = 0; i < n; i++) {
+      const dx = x[i] - a, dy = y[i] - b, d = Math.hypot(dx, dy) || 1e-30, res = d - r, j = [-dx / d, -dy / d, -1];
+      for (let p = 0; p < 3; p++) { g[p] -= j[p] * res; for (let q = 0; q < 3; q++) J[p][q] += j[p] * j[q]; }
+    }
+    const st = solve(J, g); if (!st) break;
+    a += st[0]; b += st[1]; r += st[2];
+    if (Math.hypot(st[0], st[1], st[2]) < 1e-9 * (r + 1e-30)) break;
+  }
+  return Number.isFinite(a + b + r) && r > 0 ? { cx: a, cy: b, r } : { cx: cx + mx, cy: cy + my, r: Math.sqrt(r2) };
+}
+
+function unwrap(a) {
+  const out = new Float64Array(a.length); let off = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (i) { const d = a[i] - a[i - 1]; if (d > Math.PI) off -= TAU; else if (d < -Math.PI) off += TAU; }
+    out[i] = a[i] + off;
+  }
   return out;
 }
-// Room map: polar grid of echo power by heading (10° bins) and distance rings.
-class RoomMap{
-  constructor(maxCm, nBins=36, nRings=72){ this.maxCm=maxCm; this.nB=nBins; this.nR=nRings;
-    this.acc=Array.from({length:nBins},()=>new Float64Array(nRings)); this.cnt=new Uint32Array(nBins); }
-  add(headDeg, amp, cmPerTap){
-    const b=Math.floor((((headDeg%360)+360)%360)/(360/this.nB))%this.nB, ringCm=this.maxCm/this.nR, A=this.acc[b];
-    for(let r=0;r<this.nR;r++){ const m1=Math.floor(r*ringCm/cmPerTap), m2=Math.min(amp.length-1, Math.floor((r+1)*ringCm/cmPerTap));
-      let v=0; for(let m=m1;m<=m2;m++) if(amp[m]>v) v=amp[m]; A[r]+=v*v; }
-    this.cnt[b]++;
-  }
-  // dB per cell, and "excess" = dB minus the median over scanned directions at that distance
-  image(minCm=25){
-    const vis=[]; for(let b=0;b<this.nB;b++) if(this.cnt[b]>=3) vis.push(b);
-    const db=Array.from({length:this.nB},()=>new Float32Array(this.nR).fill(NaN)), ex=Array.from({length:this.nB},()=>new Float32Array(this.nR).fill(NaN));
-    for(const b of vis) for(let r=0;r<this.nR;r++) db[b][r]=10*Math.log10(this.acc[b][r]/this.cnt[b]+1e-18);
-    const peaks=[];
-    if(vis.length>=4){
-      for(let r=0;r<this.nR;r++){ const v=vis.map(b=>db[b][r]).sort((x,y)=>x-y), med=v[v.length>>1]; for(const b of vis) ex[b][r]=db[b][r]-med; }
-      const ringCm=this.maxCm/this.nR, r0=Math.ceil(minCm/ringCm);
-      for(const b of vis){ let br=-1, bv=4; for(let r=r0;r<this.nR-1;r++) if(ex[b][r]>bv){ bv=ex[b][r]; br=r; }
-        if(br>=0) peaks.push({deg:(b+0.5)*360/this.nB, cm:(br+0.5)*ringCm, ex:bv}); }
-    }
-    return {db, ex, peaks, visited:vis.length};
-  }
-}
-//DSP-END
 
-const $=s=>document.querySelector(s);
-const RN=1<<17, RM=RN-1, ring=new Float32Array(RN);
-let ac=null, stream=null, srcNode=null, proc=null, probeSrc=null, gainNode=null, wakeLock=null;
-let total=0, mode=null, sonar=null, startAt=0, micRms=0, lastDb=null, lastPk=null, frames=0, fpsT=performance.now(), fps=0, raf=0;
-let floorS=null;
+const wrapPi = a => a - TAU * Math.round(a / TAU);
 
-async function openAudio(){
-  if(ac) return;
-  ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
-  await ac.resume();
-  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1}});
-  srcNode=ac.createMediaStreamSource(stream);
-  proc=ac.createScriptProcessor(2048, 1, 1);
-  const mute=ac.createGain(); mute.gain.value=0;
-  srcNode.connect(proc); proc.connect(mute); mute.connect(ac.destination);
-  proc.onaudioprocess=e=>{
-    const d=e.inputBuffer.getChannelData(0); let s=0;
-    for(let i=0;i<d.length;i++){ ring[(total+i)&RM]=d[i]; s+=d[i]*d[i]; }
-    total+=d.length; micRms=0.8*micRms+0.2*Math.sqrt(s/d.length);
-    if(mode==='echo') echoBlock(); else if(mode==='map') mapBlock(); else if(mode==='knock') knockBlock(d);
+// Model-guided unwrapping, used only when consecutive phase steps are large (> 90°) so plain
+// unwrapping is ambiguous. Fits θ(t) = θ0 + a·cos(2πft) + b·sin(2πft) + g·t directly to the unit
+// phasors (wrap-free), by grid search then local refinement, and returns it if the phasors agree
+// with the model (coherence ≥ 0.8). Movement up to about ±7 rad of phase (±10 mm at 18.5 kHz).
+function modelUnwrap(ts, ur, ui) {
+  const n = ts.length; let tm = 0; for (const t of ts) tm += t; tm /= n;
+  const tc = Float64Array.from(ts, t => t - tm), T = tc[n - 1] - tc[0];
+  const diffs = []; for (let i = 1; i < n; i++) diffs.push(ts[i] - ts[i - 1]);
+  const fmin = 1.5 / T, fmax = 0.5 / median(diffs);
+  if (!(fmax > fmin)) return null;
+  const coh = (f, a, b, g) => {
+    let sr = 0, si = 0; const w = TAU * f;
+    for (let i = 0; i < n; i++) { const th = a * Math.cos(w * tc[i]) + b * Math.sin(w * tc[i]) + g * tc[i], c = Math.cos(th), s = Math.sin(th); sr += ur[i] * c + ui[i] * s; si += ui[i] * c - ur[i] * s; }
+    return Math.hypot(sr, si) / n;
   };
-  try{ wakeLock=await navigator.wakeLock?.request('screen'); }catch(e){}
-}
-function closeAudio(){
-  try{ probeSrc?.stop(); }catch(e){}
-  probeSrc=null; gainNode=null;
-  try{ proc && (proc.onaudioprocess=null); stream?.getTracks().forEach(t=>t.stop()); ac?.close(); }catch(e){}
-  try{ wakeLock?.release(); }catch(e){}
-  ac=null; stream=null; proc=null; wakeLock=null; mode=null; total=0;
-  cancelAnimationFrame(raf);
+  const AMAX = 7, STEP = 0.5, NA = Math.round(2 * AMAX / STEP) + 1, NF = Math.min(400, Math.ceil((fmax - fmin) * T * 8) + 2);
+  const Ec = new Float64Array(NA * n), Es = new Float64Array(NA * n), Fc = new Float64Array(NA * n), Fs = new Float64Array(NA * n);
+  let best = { c: 0 };
+  for (let m = 0; m < NF; m++) {
+    const f = fmin + (fmax - fmin) * m / (NF - 1), w = TAU * f;
+    for (let k = 0; k < NA; k++) {
+      const v = -AMAX + k * STEP;
+      for (let i = 0; i < n; i++) { const p = v * Math.cos(w * tc[i]), q = v * Math.sin(w * tc[i]); Ec[k * n + i] = Math.cos(p); Es[k * n + i] = -Math.sin(p); Fc[k * n + i] = Math.cos(q); Fs[k * n + i] = -Math.sin(q); }
+    }
+    for (let ka = 0; ka < NA; ka++) {
+      const oa = ka * n;
+      // pre-multiply u by exp(-j a cos)
+      for (let kb = 0; kb < NA; kb++) {
+        const ob = kb * n; let sr = 0, si = 0;
+        for (let i = 0; i < n; i++) {
+          const er = Ec[oa + i] * Fc[ob + i] - Es[oa + i] * Fs[ob + i], ei = Ec[oa + i] * Fs[ob + i] + Es[oa + i] * Fc[ob + i];
+          sr += ur[i] * er - ui[i] * ei; si += ur[i] * ei + ui[i] * er;
+        }
+        const c = (sr * sr + si * si);
+        if (c > best.c) best = { c, f, a: -AMAX + ka * STEP, b: -AMAX + kb * STEP, g: 0 };
+      }
+    }
+  }
+  // local refinement (coordinate pattern search)
+  let p = [best.f, best.a, best.b, 0], cur = coh(...p);
+  let st = [(fmax - fmin) / (NF - 1) / 2, STEP / 2, STEP / 2, 0.05];
+  for (let it = 0; it < 12; it++) {
+    for (let k = 0; k < 4; k++) for (const sgn of [1, -1]) {
+      const q = p.slice(); q[k] += sgn * st[k]; const v = coh(...q);
+      if (v > cur) { cur = v; p = q; }
+    }
+    st = st.map(s => s * 0.6);
+  }
+  if (cur < 0.8) return { ok: false, coherence: cur };
+  const w = TAU * p[0], model = Float64Array.from(tc, t => p[1] * Math.cos(w * t) + p[2] * Math.sin(w * t) + p[3] * t);
+  let sr = 0, si = 0; for (let i = 0; i < n; i++) { const c = Math.cos(model[i]), s = Math.sin(model[i]); sr += ur[i] * c + ui[i] * s; si += ui[i] * c - ur[i] * s; }
+  const th0 = Math.atan2(si, sr);
+  return { ok: true, coherence: cur, model: model.map(v => v + th0) };
 }
 
-/* ---------- Echo mode ---------- */
-function bandVals(){ let [f1,f2]=$('#band').value.split('-').map(Number); if(ac){ f2=Math.min(f2, 0.45*ac.sampleRate); } return [f1,f2]; }
-function buildSonar(rangeCm){
-  const [f1,f2]=bandVals();
-  sonar=new Sonar(ac.sampleRate, f1, f2, rangeCm || +$('#range').value);
-  try{ probeSrc?.stop(); }catch(e){}
-  const buf=ac.createBuffer(1, sonar.P, ac.sampleRate); buf.copyToChannel(sonar.pr.x, 0);
-  probeSrc=ac.createBufferSource(); probeSrc.buffer=buf; probeSrc.loop=true;
-  if(!gainNode){ gainNode=ac.createGain(); gainNode.connect(ac.destination); }
-  gainNode.gain.value=+$('#lvl').value;
-  probeSrc.connect(gainNode); probeSrc.start();
-  startAt=total+Math.round(0.6*ac.sampleRate); floorS=null; lastDb=null; lastPk=null;
-  lastLogT=-1; pkHist=[]; stable={e:[],m:[]}; runLog.push(`# band ${f1}-${f2} Hz, range ${$('#range').value} cm, volume ${$('#lvl').value}, started ${new Date().toLocaleTimeString()}`);
-  $('#resTxt').textContent=`Detail ≈ ${sonar.resCm.toFixed(1)} cm`;
-  clearScan();
-}
-const win=new Float32Array(8192);
-let runLog=[], lastLogT=-1, pkHist=[], stable={e:[],m:[]};
-// Keep only echoes that persist: cluster peaks from the last ~3 s, score = summed clarity, need ≥40% presence.
-function persist(frames){
-  const all=[]; frames.forEach(l=>l.forEach(p=>all.push(p))); if(!all.length || !sonar) return [];
-  const tol=1.5*sonar.resCm, used=new Array(all.length).fill(false), out=[];
-  const order=all.map((p,i)=>i).sort((a,b)=>all[b].above-all[a].above);
-  for(const i of order){ if(used[i]) continue;
-    const c=all[i].cm, mem=[]; all.forEach((p,j)=>{ if(!used[j] && Math.abs(p.cm-c)<=tol){ used[j]=true; mem.push(p); } });
-    if(mem.length < 0.4*frames.length) continue;
-    const cms=mem.map(p=>p.cm).sort((a,b)=>a-b);
-    out.push({cm:cms[cms.length>>1], above:mem.reduce((s,p)=>s+p.above,0)/mem.length, score:mem.reduce((s,p)=>s+p.above,0)});
+// ---- movement analysis for one candidate lag ----
+function fitCandidate(H, q, e, meanMag) {
+  const n = H.length, xs = new Float64Array(n), ys = new Float64Array(n), ts = new Float64Array(n);
+  const t0 = H[0].t;
+  let mx = 0, my = 0;
+  for (let i = 0; i < n; i++) { xs[i] = H[i].pr[q]; ys[i] = H[i].pi[q]; ts[i] = H[i].t - t0; mx += xs[i]; my += ys[i]; }
+  mx /= n; my /= n;
+  let maxDev = 0; for (let i = 0; i < n; i++) maxDev = Math.max(maxDev, Math.hypot(xs[i] - mx, ys[i] - my));
+  // arc covered by the phasors around a centre = 360° minus the largest empty angular gap
+  const coverage = (cx, cy) => {
+    const a = Array.from(xs, (v, i) => Math.atan2(ys[i] - cy, v - cx)).sort((p, q) => p - q);
+    let gap = a[0] + TAU - a[n - 1]; for (let i = 1; i < n; i++) gap = Math.max(gap, a[i] - a[i - 1]);
+    return TAU - gap;
+  };
+  let cx = 0, cy = 0, method = 'raw phase', arc = 0;
+  const cf = circleFit(xs, ys);
+  // radial spread about a centre: small when the phasors lie on a circle around it
+  const spread = (cx, cy) => { let m = 0, m2 = 0; for (let i = 0; i < n; i++) { const r = Math.hypot(xs[i] - cx, ys[i] - cy); m += r; m2 += r * r; } m /= n; return Math.sqrt(Math.max(0, m2 / n - m * m)); };
+  if (cf && cf.r < 10 * maxDev) {
+    const a = coverage(cf.cx, cf.cy);
+    if (a >= Math.PI / 3 && spread(cf.cx, cf.cy) < 0.5 * spread(0, 0)) { cx = cf.cx; cy = cf.cy; method = 'circle fit'; arc = a; }
   }
-  return out.sort((a,b)=>b.score-a.score).slice(0,3);
-}
-function echoBlock(){
-  if(!sonar || total<startAt || total<sonar.P) return;
-  const P=sonar.P; for(let i=0;i<P;i++) win[i]=ring[(total-P+i)&RM];
-  if(!sonar.process(win)) return;
-  const view=$('#view').value, eDb=sonar.db('echo'), mDb=sonar.db('motion');
-  const ePk=sonar.peaks(eDb, 15, 3, 6, mDb), mPk=sonar.peaks(mDb, 15, 3, 8);
-  const db = view==='motion' ? mDb : eDb, pk = view==='motion' ? mPk : ePk;
-  floorS = floorS===null ? pk.floor : 0.9*floorS+0.1*pk.floor;
-  lastDb=db; lastPk=pk; frames++;
-  addColumn(db);
-  pkHist.push({e:ePk.list, m:mPk.list}); if(pkHist.length>70) pkHist.shift();   // ~3 s of frames
-  stable = { e: persist(pkHist.map(h=>h.e)), m: persist(pkHist.map(h=>h.m)) };
-  const tNow=(total-startAt)/ac.sampleRate;
-  if(tNow-lastLogT>=1){ lastLogT=tNow; const f=(l,i,k)=>l[i]?(k==='cm'?l[i].cm.toFixed(1):l[i][k]==null?'':l[i][k].toFixed(1)):'';
-    runLog.push([tNow.toFixed(1), sonar.snrDb.toFixed(1), (20*Math.log10(micRms+1e-9)).toFixed(1),
-      ...[0,1,2].flatMap(i=>[f(ePk.list,i,'cm'), f(ePk.list,i,'above'), f(ePk.list,i,'steady')]),
-      ...[0,1].flatMap(i=>[f(mPk.list,i,'cm'), f(mPk.list,i,'above')]), f(stable.e,0,'cm'), f(stable.m,0,'cm')].join(','));
-    if(runLog.length>1800) runLog.shift(); }
-}
-async function startEcho(){
-  try{ await openAudio(); }catch(e){ $('#others').textContent='Microphone blocked: '+e.message; closeAudio(); return; }
-  mode='echo'; runLog=[]; buildSonar();
-  $('#bStart').textContent='Stop'; $('#bStart').className='stop';
-  loop();
-}
-function stopAll(){
-  closeAudio();
-  $('#bStart').textContent='Start sonar'; $('#bStart').className='primary';
-  $('#kStart').textContent='Start listening'; $('#kStart').className='primary'; $('#kStat').textContent='';
-  $('#mStart').textContent='Start mapping'; $('#mStart').className='primary';
-}
-$('#bStart').onclick=()=> mode==='echo' ? stopAll() : (stopAll(), startEcho());
-$('#band').onchange=()=>{ if(mode==='echo') buildSonar(); };
-$('#range').onchange=()=>{ if(mode==='echo'){ sonar.setRange(+$('#range').value); lastDb=null; pkHist=[]; stable={e:[],m:[]}; clearScan(); } };
-$('#lvl').oninput=()=>{ if(gainNode) gainNode.gain.value=+$('#lvl').value; };
-$('#view').onchange=()=>{ clearScan(); };
+  if (method !== 'circle fit') arc = coverage(0, 0);
+  const thw = Float64Array.from(xs, (v, i) => Math.atan2(ys[i] - cy, v - cx));
+  let th = unwrap(thw);
+  let big = 0; for (let i = 1; i < n; i++) if (Math.abs(wrapPi(thw[i] - thw[i - 1])) > Math.PI / 2) big++;
+  let unwrapNote = 'plain';
+  if (big > 0.1 * (n - 1)) {
+    const ur = new Float64Array(n), ui = new Float64Array(n);
+    for (let i = 0; i < n; i++) { ur[i] = Math.cos(thw[i]); ui[i] = Math.sin(thw[i]); }
+    const mu = modelUnwrap(ts, ur, ui);
+    if (mu && mu.ok) { th = Float64Array.from(thw, (v, i) => mu.model[i] + wrapPi(v - mu.model[i])); unwrapNote = 'model-guided'; }
+    else unwrapNote = 'ambiguous';
+  }
+  const k2mm = -e.lambda / (4 * Math.PI) * 1000;
+  const d = Float64Array.from(th, v => v * k2mm);
 
-// Inferno-like colour map
-const STOPS=[[0,0,4],[40,11,84],[101,21,110],[159,42,99],[212,72,66],[245,125,21],[250,193,39],[252,255,164]];
-const LUT=new Uint8Array(256*3);
-for(let i=0;i<256;i++){ const t=i/255*(STOPS.length-1), a=Math.floor(t), b=Math.min(STOPS.length-1,a+1), f=t-a;
-  for(let c=0;c<3;c++) LUT[i*3+c]=Math.round(STOPS[a][c]*(1-f)+STOPS[b][c]*f); }
-const BW=420, BH=180, off=document.createElement('canvas'); off.width=BW; off.height=BH;
-const octx=off.getContext('2d'); const col=octx.createImageData(1, BH);
-function clearScan(){ octx.fillStyle='#000004'; octx.fillRect(0,0,BW,BH); }
-clearScan();
-function addColumn(db){
-  if(!sonar) return; const M=sonar.M, lo=(floorS??-60)+2, span=40;
-  octx.drawImage(off, -1, 0);
-  for(let r=0;r<BH;r++){
-    const a=Math.floor(r*M/BH), b=Math.max(a+1, Math.floor((r+1)*M/BH)); let v=-1e9;
-    for(let m=a;m<b&&m<=M;m++) if(db[m]>v) v=db[m];
-    const i=Math.max(0, Math.min(255, Math.round((v-lo)/span*255)));
-    col.data[r*4]=LUT[i*3]; col.data[r*4+1]=LUT[i*3+1]; col.data[r*4+2]=LUT[i*3+2]; col.data[r*4+3]=255;
+  // coarse distance: local max of mean magnitude near q, parabolic interpolation
+  let qb = q; const hw = Math.ceil(e.sep / 2);
+  for (let j = Math.max(1, q - hw); j <= Math.min(e.K - 2, q + hw); j++) if (meanMag[j] > meanMag[qb]) qb = j;
+  let dq = 0;
+  if (qb > 0 && qb < e.K - 1) { const a = meanMag[qb - 1], b = meanMag[qb], c = meanMag[qb + 1], den = a - 2 * b + c; if (den < 0) dq = Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den)); }
+  const distM = e.lagToDist(e.lagMin + qb + dq);
+
+  // uniform resampling (linear interpolation), step = median cycle interval
+  const diffs = []; for (let i = 1; i < n; i++) diffs.push(ts[i] - ts[i - 1]);
+  const dt = median(diffs), T = ts[n - 1];
+  const Ng = Math.floor(T / dt) + 1, g = new Float64Array(Ng);
+  for (let j = 0, i = 0; j < Ng; j++) {
+    const t = j * dt; while (i < n - 2 && ts[i + 1] < t) i++;
+    const f = (t - ts[i]) / (ts[i + 1] - ts[i]); g[j] = d[i] + Math.max(0, Math.min(1, f)) * (d[i + 1] - d[i]);
   }
-  octx.putImageData(col, BW-1, 0);
+  // remove straight-line trend
+  { let st = 0, sg = 0, stt = 0, stg = 0; for (let j = 0; j < Ng; j++) { st += j; sg += g[j]; stt += j * j; stg += j * g[j]; }
+    const sl = (Ng * stg - st * sg) / (Ng * stt - st * st), ic = (sg - sl * st) / Ng; for (let j = 0; j < Ng; j++) g[j] -= ic + sl * j; }
+  const fmin = 2 / T, fmax = 0.5 / dt, NF = 400;
+  const base = { q, distCm: distM * 100, method, unwrap: unwrapNote, arcDeg: arc * 180 / Math.PI, dt, moving: false };
+  if (!(fmax > fmin * 1.2)) return Object.assign(base, { note: 'window too short for this cycle rate' });
+  const P = new Float64Array(NF);
+  for (let m = 0; m < NF; m++) {
+    const f = fmin + (fmax - fmin) * m / (NF - 1); let sr = 0, si = 0;
+    for (let j = 0; j < Ng; j++) { const a = TAU * f * j * dt; sr += g[j] * Math.cos(a); si -= g[j] * Math.sin(a); }
+    P[m] = sr * sr + si * si;
+  }
+  let mb = 0; for (let m = 1; m < NF; m++) if (P[m] > P[mb]) mb = m;
+  let dm = 0;
+  if (mb > 0 && mb < NF - 1) { const a = P[mb - 1], b = P[mb], c = P[mb + 1], den = a - 2 * b + c; if (den < 0) dm = 0.5 * (a - c) / den; }
+  const fBest = fmin + (fmax - fmin) * (mb + dm) / (NF - 1);
+  const pratio = P[mb] / Math.max(1e-30, median(P));
+
+  // least squares on original samples: line + fundamental + 2nd harmonic
+  const one = new Float64Array(n).fill(1), w = TAU * fBest;
+  const cols = [one, ts, ts.map(t => Math.cos(w * t)), ts.map(t => Math.sin(w * t)), ts.map(t => Math.cos(2 * w * t)), ts.map(t => Math.sin(2 * w * t))];
+  const cLin = lstsq(cols.slice(0, 2), d), cAll = lstsq(cols, d);
+  if (!cLin || !cAll) return Object.assign(base, { note: 'fit failed' });
+  let ssLin = 0, ssRes = 0;
+  for (let i = 0; i < n; i++) {
+    const rl = d[i] - cLin[0] - cLin[1] * ts[i]; ssLin += rl * rl;
+    let m = 0; for (let c = 0; c < 6; c++) m += cAll[c] * cols[c][i]; ssRes += (d[i] - m) * (d[i] - m);
+  }
+  const R2 = ssLin > 0 ? Math.max(0, 1 - ssRes / ssLin) : 0;
+  let lo = Infinity, hi = -Infinity;
+  for (let s = 0; s < 200; s++) {
+    const t = s / 200 / fBest;
+    const v = cAll[2] * Math.cos(w * t) + cAll[3] * Math.sin(w * t) + cAll[4] * Math.cos(2 * w * t) + cAll[5] * Math.sin(2 * w * t);
+    lo = Math.min(lo, v); hi = Math.max(hi, v);
+  }
+  const periodS = 1 / fBest;
+  return Object.assign(base, {
+    ppMm: hi - lo, periodS, perMin: 60 * fBest, periodCycles: periodS / dt, freqHz: fBest,
+    conf: R2, pratio, moving: R2 >= 0.5 && pratio >= 8 && unwrapNote !== 'ambiguous',
+    series: { t: ts, d, t0Abs: t0 }, coef: cAll
+  });
 }
-function fit(cv){ const r=cv.getBoundingClientRect(), d=window.devicePixelRatio||1;
-  const w=Math.round(r.width*d), h=Math.round(r.height*d); if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
-  const c=cv.getContext('2d'); c.setTransform(d,0,0,d,0,0); return {c, w:r.width, h:r.height}; }
-function tickStep(maxCm){ return maxCm<=100 ? 20 : maxCm<=200 ? 50 : 100; }
-function drawA(){
-  const {c,w,h}=fit($('#ascan')); c.clearRect(0,0,w,h);
-  if(!lastDb || !sonar) return;
-  const M=sonar.M, maxCm=M*sonar.cmPerTap, L=34, R=8, T=8, B=22, pw=w-L-R, ph=h-T-B;
-  const lo=(floorS??-60)-6, hi=lo+55;
-  const X=cm=>L+cm/maxCm*pw, Y=v=>T+ph*(1-Math.max(0,Math.min(1,(v-lo)/(hi-lo))));
-  c.fillStyle='rgba(255,255,255,.06)'; c.fillRect(L,T,X(15)-L,ph);
-  c.strokeStyle='#1d3a4f'; c.fillStyle='#7fa1b3'; c.font='11px system-ui'; c.lineWidth=1;
-  const st=tickStep(maxCm);
-  for(let cm=0; cm<=maxCm+0.1; cm+=st){ const x=X(cm); c.beginPath(); c.moveTo(x,T); c.lineTo(x,T+ph); c.stroke(); c.fillText(cm>=100?(cm/100)+' m':cm+' cm', Math.min(x-10, w-30), h-6); }
-  for(let v=Math.ceil(lo/10)*10; v<=hi; v+=10){ const y=Y(v); c.beginPath(); c.moveTo(L,y); c.lineTo(L+pw,y); c.stroke(); }
-  c.fillText('loud', 2, T+10); c.fillText('quiet', 2, T+ph);
-  c.strokeStyle='#3ee6c4'; c.lineWidth=1.5; c.beginPath();
-  for(let m=0;m<=M;m++){ const x=X(m*sonar.cmPerTap), y=Y(lastDb[m]); m?c.lineTo(x,y):c.moveTo(x,y); } c.stroke();
-  if(lastPk) lastPk.list.forEach((p,i)=>{ const x=X(p.cm), y=Y(p.db); c.fillStyle=i?'#ffb547':'#fff'; c.beginPath(); c.arc(x,y,4,0,7); c.fill();
-    c.fillText(Math.round(p.cm)+' cm', Math.min(x+6, w-48), Math.max(y-6, T+10)); });
+
+function analyzeMovement(H, e) {
+  const n = H.length;
+  const T = n > 1 ? H[n - 1].t - H[0].t : 0;
+  if (n < 12 || T < 10) return { status: 'collecting', n, T, items: [], moving: [] };
+  const K = e.K, mr = new Float64Array(K), mi = new Float64Array(K), mm = new Float64Array(K), D = new Float64Array(K);
+  for (const h of H) for (let q = 0; q < K; q++) { mr[q] += h.pr[q]; mi[q] += h.pi[q]; mm[q] += h.mag[q]; }
+  for (let q = 0; q < K; q++) { mr[q] /= n; mi[q] /= n; mm[q] /= n; }
+  for (const h of H) for (let q = 0; q < K; q++) { const a = h.pr[q] - mr[q], b = h.pi[q] - mi[q]; D[q] += a * a + b * b; }
+  for (let q = 0; q < K; q++) D[q] = Math.sqrt(D[q] / n);
+  const med = median(D);
+  const peaks = [];
+  for (let q = 1; q < K - 1; q++) if (D[q] > D[q - 1] && D[q] >= D[q + 1] && D[q] > 2 * med) peaks.push(q);
+  peaks.sort((a, b) => D[b] - D[a]);
+  const cands = [];
+  for (const q of peaks) { if (cands.every(c => Math.abs(c - q) >= e.sep)) cands.push(q); if (cands.length >= 6) break; }
+  const items = cands.map(q => Object.assign(fitCandidate(H, q, e, mm), { dyn: D[q] / med }));
+  const moving = items.filter(it => it.moving).sort((a, b) => a.distCm - b.distCm);
+  return { status: 'ok', n, T, items, moving, dynMedian: med };
 }
-function drawB(){
-  const {c,w,h}=fit($('#bscan')); c.clearRect(0,0,w,h);
-  const L=38, T=4, B=16, pw=w-L-4, ph=h-T-B;
-  c.imageSmoothingEnabled=true; c.drawImage(off, L, T, pw, ph);
-  if(!sonar) return; const maxCm=sonar.M*sonar.cmPerTap, st=tickStep(maxCm);
-  c.fillStyle='#7fa1b3'; c.font='11px system-ui';
-  for(let cm=0; cm<=maxCm+0.1; cm+=st){ const y=T+cm/maxCm*ph; c.fillText(cm>=100?(cm/100)+' m':cm+'', 2, Math.min(y+4, T+ph)); c.fillStyle='rgba(127,161,179,.35)'; c.fillRect(L,y,4,1); c.fillStyle='#7fa1b3'; }
-  c.fillText('← older        distance ↓        now →', L+6, h-3);
+
+class Engine {
+  constructor(o) {
+    this.fs = o.fs; this.c = o.c || 343; this.f0 = o.f0; this.f1 = o.f1; this.fc = (o.f0 + o.f1) / 2;
+    this.lambda = this.c / this.fc;
+    this.chirpS = (o.chirpMs || 10) / 1000;
+    this.maxRange = o.maxRange || 3; this.minRange = o.minRange || 0.15; this.gap = o.gapM || 0;
+    this.windowS = o.windowS || 30;
+    this.rangeRes = this.c / (2 * (this.f1 - this.f0));
+    this.edgeMargin = Math.max(0.05, this.rangeRes);
+    this.win = Math.round(0.010 * this.fs); this.holdWins = 5; this.maxCycleS = 5;
+    this.noiseS = o.noiseS || 1.5; this.noBeepS = 1.0; this.quietFactor = 2; this.arriveFactor = 10;
+    const fs = this.fs, M = Math.round(this.chirpS * fs); this.M = M;
+    this.play = new Float32Array(M);
+    this.N = 2048; while (this.N < 4 * M) this.N *= 2;
+    this.fft = new FFT(this.N);
+    this.SR = new Float64Array(this.N); this.SI = new Float64Array(this.N);
+    const kk = (this.f1 - this.f0) / this.chirpS;
+    for (let k = 0; k < M; k++) {
+      const t = k / fs, w = 0.5 - 0.5 * Math.cos(TAU * k / (M - 1)), ph = TAU * (this.f0 * t + 0.5 * kk * t * t);
+      this.play[k] = w * Math.cos(ph); this.SR[k] = w * Math.cos(ph); this.SI[k] = w * Math.sin(ph);
+    }
+    this.fft.fwd(this.SR, this.SI);
+    this.br = new Float64Array(this.N); this.bi = new Float64Array(this.N);
+    this.wc = TAU * this.fc / fs;
+    this.lagMin = Math.ceil((2 * this.minRange - this.gap) / this.c * fs);
+    this.lagMax = Math.floor((2 * (this.maxRange - this.edgeMargin) - this.gap) / this.c * fs);
+    this.K = this.lagMax - this.lagMin + 1;
+    this.sep = Math.max(3, Math.round(fs / (this.f1 - this.f0)));
+    const cap = Math.ceil((this.maxCycleS + 0.6) * fs) + this.N;
+    this.raw = new Float32Array(cap); this.yr = new Float32Array(cap); this.yi = new Float32Array(cap);
+    this.state = 'noise'; this.now = null; this.floor = 0; this.len = 0; this.mfDone = 0;
+    this.cyc = null; this.hist = []; this.refMags = []; this.refA0 = []; this.refC = []; this.lastAnaT = -1e9; this.suspect = 0; this.settle = 0; this.cycleIndex = 0;
+    this.lastRes = null; this.analysis = { status: 'collecting', items: [], moving: [] };
+    this.requestBeep = null; this.onCycle = null; this.onNoise = null;
+  }
+  lagToDist(lag) { return (this.c * lag / this.fs + this.gap) / 2; }
+
+  feed(x, frame) {
+    if (this.now === null) this.now = frame !== undefined ? frame : 0;
+    const start = this.now; this.now += x.length;
+    if (this.state === 'noise') {
+      const need = Math.round(this.noiseS * this.fs);
+      for (let i = 0; i < x.length && this.len < need; i++) this.raw[this.len++] = x[i];
+      if (this.len >= need) this._finishNoise();
+    } else if (this.state === 'listen') {
+      const c = this.cyc, i0 = Math.max(0, c.F - start);
+      for (let i = i0; i < x.length && this.len < this.raw.length; i++) { if (this.len === 0) c.origin = start + i; this.raw[this.len++] = x[i]; }
+      this._mf(); this._windows();
+    }
+  }
+
+  _mf() {
+    const N = this.N, V = N - this.M + 1, br = this.br, bi = this.bi, SR = this.SR, SI = this.SI;
+    while (this.mfDone + N <= this.len) {
+      const p = this.mfDone;
+      for (let i = 0; i < N; i++) { br[i] = this.raw[p + i]; bi[i] = 0; }
+      this.fft.fwd(br, bi);
+      for (let i = 0; i < N; i++) { const a = br[i], b = bi[i], c = SR[i], d = SI[i]; br[i] = a * c + b * d; bi[i] = -(b * c - a * d); }
+      this.fft.fwd(br, bi); // inverse via conjugation
+      for (let n = 0; n < V; n++) { this.yr[p + n] = br[n] / N; this.yi[p + n] = -bi[n] / N; }
+      this.mfDone += V;
+    }
+  }
+  _winE(j) { let s = 0; const a = j * this.win, b = a + this.win; for (let n = a; n < b; n++) s += this.yr[n] * this.yr[n] + this.yi[n] * this.yi[n]; return s / this.win; }
+
+  _finishNoise() {
+    this.mfDone = 0; this._mf();
+    const E = []; for (let j = 0; (j + 1) * this.win <= this.mfDone; j++) E.push(this._winE(j));
+    this.floor = median(E);
+    if (this.onNoise) this.onNoise(this.floor);
+    this._startCycle();
+  }
+
+  _startCycle() {
+    const F = this.requestBeep ? this.requestBeep() : this.now;
+    if (this.lastRes) this.lastRes.len = (F - this.lastRes.F) / this.fs;
+    this.cyc = { F, origin: null, nWin: 0, arr: -1, quiet: 0, E: [] };
+    this.len = 0; this.mfDone = 0; this.state = 'listen';
+  }
+
+  _windows() {
+    const c = this.cyc, win = this.win, fs = this.fs;
+    const minAfter = Math.ceil((2 * this.maxRange / this.c + this.chirpS) / 0.01) + 1;
+    while ((c.nWin + 1) * win <= this.mfDone) {
+      const j = c.nWin++, E = this._winE(j); c.E.push(E);
+      if (c.arr < 0) {
+        if (E > this.floor * this.arriveFactor) c.arr = j;
+        else if ((j + 1) * win > this.noBeepS * fs) return this._end('nobeep', j);
+      } else {
+        c.quiet = E < this.floor * this.quietFactor ? c.quiet + 1 : 0;
+        if (c.quiet >= this.holdWins && j >= c.arr + minAfter) return this._end('quiet', j);
+      }
+      if ((j + 1) * win >= this.maxCycleS * fs || (j + 2) * win > this.raw.length - this.N) return this._end('max', j);
+    }
+  }
+
+  _end(reason, j) {
+    const c = this.cyc;
+    if (reason !== 'nobeep') {
+      let s = 0; const a = Math.max(0, j - this.holdWins + 1); for (let k = a; k <= j; k++) s += c.E[k];
+      const tail = s / (j - a + 1);
+      this.floor = 0.95 * this.floor + 0.05 * Math.min(1.5 * this.floor, Math.max(this.floor / 1.5, tail));
+    }
+    const res = { index: this.cycleIndex++, F: c.F, t: c.F / this.fs, listenS: (j + 1) * this.win / this.fs, reason, ok: false, warn: [], floor: this.floor };
+    if (reason === 'nobeep') res.warn.push('no beep heard – raise volume');
+    if (reason === 'max') res.warn.push('cycle hit 5 s limit – room very echoey or noisy');
+    if (reason !== 'nobeep') this._analyse(c, res);
+    this.lastRes = res;
+    this._startCycle();
+    if (this.onCycle) this.onCycle(res);
+  }
+
+  _z(t, out) { // demodulated matched-filter output at fractional sample t (linear interpolation)
+    const n = Math.floor(t), f = t - n, a = -((this.wc * n) % TAU), ca = Math.cos(a), sa = Math.sin(a);
+    const cb = Math.cos(a - this.wc), sb = Math.sin(a - this.wc);
+    const r0 = this.yr[n] * ca - this.yi[n] * sa, i0 = this.yr[n] * sa + this.yi[n] * ca;
+    const r1 = this.yr[n + 1] * cb - this.yi[n + 1] * sb, i1 = this.yr[n + 1] * sb + this.yi[n + 1] * cb;
+    out[0] = r0 + f * (r1 - r0); out[1] = i0 + f * (i1 - i0); return out;
+  }
+
+  _analyse(c, res) {
+    const yr = this.yr, yi = this.yi, win = this.win;
+    const a0 = Math.max(1, (c.arr - 1) * win), a1 = Math.min(this.mfDone - 2, (c.arr + 4) * win);
+    let idx = a0, best = -1;
+    for (let n = a0; n <= a1; n++) { const m = yr[n] * yr[n] + yi[n] * yi[n]; if (m > best) { best = m; idx = n; } }
+    const env = n => Math.hypot(yr[n], yi[n]);
+    let dd = 0; { const a = env(idx - 1), b = env(idx), cc = env(idx + 1), den = a - 2 * b + cc; if (den < 0) dd = Math.max(-0.5, Math.min(0.5, 0.5 * (a - cc) / den)); }
+    const t0 = idx + dd;
+    if (t0 + this.lagMax + 2 >= this.mfDone) { res.warn.push('listening too short for max range'); return; }
+    const zd = this._z(t0, [0, 0]), A0 = Math.hypot(zd[0], zd[1]), inv = 1 / (A0 * A0);
+    const K = this.K, pr = new Float32Array(K), pi = new Float32Array(K), mag = new Float32Array(K), z = [0, 0];
+    for (let q = 0; q < K; q++) {
+      this._z(t0 + this.lagMin + q, z);
+      pr[q] = (z[0] * zd[0] + z[1] * zd[1]) * inv; pi[q] = (z[1] * zd[0] - z[0] * zd[1]) * inv;
+      mag[q] = Math.hypot(pr[q], pi[q]);
+    }
+    const nRel = Math.sqrt(this.floor) / A0;
+    Object.assign(res, { ok: true, t0Frame: (c.origin || c.F) + t0, A0, snrDb: 10 * Math.log10(A0 * A0 / this.floor), nRel, pr, pi, mag });
+    if (res.snrDb < 20) res.warn.push('weak signal – raise volume or move phone');
+    // echo list
+    const thr = 4 * nRel, ech = [], k2mm = -this.lambda / (4 * Math.PI) * 1000;
+    for (let q = 1; q < K - 1; q++) if (mag[q] > thr && mag[q] > mag[q - 1] && mag[q] >= mag[q + 1]) {
+      const a = mag[q - 1], b = mag[q], cc = mag[q + 1], den = a - 2 * b + cc; const d = den < 0 ? 0.5 * (a - cc) / den : 0;
+      ech.push({ q, distCm: this.lagToDist(this.lagMin + q + d) * 100, db: 20 * Math.log10(b), fineMm: Math.atan2(pi[q], pr[q]) * k2mm });
+    }
+    ech.sort((a, b) => b.db - a.db); res.echoes = ech.slice(0, 12).sort((a, b) => a.distCm - b.distCm);
+    // phone moved?
+    let shift = false;
+    if (this.refMags.length >= 3) {
+      const ref = new Float64Array(K); for (const m of this.refMags) for (let q = 0; q < K; q++) ref[q] += m[q] / this.refMags.length;
+      const idxs = []; for (let q = 0; q < K; q++) if (ref[q] > 4 * nRel) idxs.push(q);
+      const refA = this.refA0.reduce((s, v) => s + v, 0) / this.refA0.length;
+      const dA = 20 * Math.log10(A0 / refA);
+      let corr = 1;
+      if (idxs.length >= 8) {
+        let ma = 0, mb = 0; for (const q of idxs) { ma += ref[q]; mb += mag[q]; } ma /= idxs.length; mb /= idxs.length;
+        let sab = 0, saa = 0, sbb = 0; for (const q of idxs) { const u = ref[q] - ma, v = mag[q] - mb; sab += u * v; saa += u * u; sbb += v * v; }
+        corr = sab / Math.sqrt(saa * sbb + 1e-30);
+      }
+      // phase test: a moved phone changes the phase of (almost) every echo at once; breathing moves only one
+      const refR = new Float64Array(K), refI = new Float64Array(K);
+      for (const h of this.refC) for (let q = 0; q < K; q++) { refR[q] += h[0][q]; refI[q] += h[1][q]; }
+      let nPk = 0, nJump = 0;
+      for (let q = 1; q < K - 1; q++) if (ref[q] > 6 * nRel && ref[q] > ref[q - 1] && ref[q] >= ref[q + 1]) {
+        nPk++; const dph = Math.atan2(pi[q] * refR[q] - pr[q] * refI[q], pr[q] * refR[q] + pi[q] * refI[q]);
+        if (Math.abs(dph) > Math.PI / 4) nJump++;
+      }
+      res.profileCorr = corr; res.directChangeDb = dA; res.phaseJumpFrac = nPk >= 3 ? nJump / nPk : 0;
+      if (corr < 0.8 || Math.abs(dA) > 3 || (nPk >= 3 && nJump >= 0.6 * nPk)) shift = true;
+    }
+    if (shift && !this.suspect) this.suspectT = res.t;
+    if (shift && (++this.suspect < 3 || res.t - this.suspectT < 0.3)) {
+      res.skipped = true; res.warn.push('cycle unlike the previous ones – skipped');
+    } else if (shift) {
+      res.shift = true; res.warn.push('phone moved/touched – history reset'); this.suspect = 0;
+      this.hist = []; this.refMags = []; this.refA0 = []; this.refC = []; this.settle = 3;
+      this.analysis = { status: 'paused', items: [], moving: [] };
+    } else {
+      this.suspect = 0;
+      this.refMags.push(mag); this.refA0.push(A0); this.refC.push([pr, pi]);
+      if (this.refMags.length > 5) { this.refMags.shift(); this.refA0.shift(); this.refC.shift(); }
+      if (this.settle > 0) { this.settle--; res.settling = true; }
+      else {
+        this.hist.push({ t: res.t, pr, pi, mag });
+        while (this.hist.length && this.hist[0].t < res.t - this.windowS) this.hist.shift();
+        if (res.t - this.lastAnaT >= 1 || this.analysis.status !== 'ok') { this.analysis = analyzeMovement(this.hist, this); this.lastAnaT = res.t; }
+      }
+    }
+    res.analysis = this.analysis;
+  }
 }
-function readout(){
-  if(!sonar) return;
-  const motion=$('#view').value==='motion';
-  $('#lbl1').textContent = motion ? 'Movement at' : 'Clearest still object';
-  const L=motion ? stable.m : stable.e;
-  if(L.length){ $('#dist').textContent=Math.round(L[0].cm)+' cm';
-    $('#others').textContent = L.length>1 ? 'Other echoes: '+L.slice(1).map(p=>Math.round(p.cm)+' cm').join(', ') : (motion?'':'No other clear echoes');
-  } else { $('#dist').textContent='—'; $('#others').textContent = motion ? 'Nothing moving' : 'No clear echo yet'; }
-  const micDb=20*Math.log10(micRms+1e-9), snr=sonar.snrDb;
-  let q=`Signal ${snr.toFixed(0)} dB · Mic ${micDb.toFixed(0)} dBFS · ${fps.toFixed(0)} scans/s · ${ac?.sampleRate||''} Hz`;
-  if(total<startAt) q='Warming up…';
-  else if(micDb<-75) q+=' · <span class="warn">Mic is silent. Check microphone permission.</span>';
-  else if(snr<15) q+=' · <span class="warn">Weak signal. Raise the volume or try a lower band.</span>';
-  $('#qual').innerHTML=q;
+
+return { Engine, analyzeMovement, circleFit, median, FFT };
+})();
+if (typeof module !== 'undefined') module.exports = Sonar;
+</script>
+
+<!-- ================= UI ================= -->
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const WORKLET = `
+class Rec extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Float32Array(1024); this.n = 0; this.f0 = 0; }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (!ch) return true;
+    if (this.n === 0) this.f0 = currentFrame;
+    this.buf.set(ch, this.n); this.n += ch.length;
+    if (this.n >= this.buf.length) { this.port.postMessage({ frame: this.f0, data: this.buf }, [this.buf.buffer]); this.buf = new Float32Array(1024); this.n = 0; }
+    return true;
+  }
 }
-function loop(){
-  const now=performance.now(); if(now-fpsT>1000){ fps=frames*1000/(now-fpsT); frames=0; fpsT=now; }
-  if(mode==='echo'){ drawA(); drawB(); readout(); }
-  raf=requestAnimationFrame(loop);
+registerProcessor('sonar-rec', Rec);`;
+
+let ctx = null, stream = null, eng = null, outGain = null, wakeLock = null, running = false;
+let log = [], lastRes = null, selDist = null, micPeak = 0, micPeakT = 0, drawPending = false;
+const wfOff = document.createElement('canvas');
+
+function bandInfo() {
+  const [f0, f1] = $('band').value.split(',').map(Number), c = 343, fc = (f0 + f1) / 2;
+  $('bandInfo').textContent = `Band ${f0 / 1000}–${f1 / 1000} kHz · range resolution c/(2·bandwidth) = ${(100 * c / (2 * (f1 - f0))).toFixed(1)} cm · ` +
+    `wavelength at ${(fc / 1000).toFixed(1)} kHz = ${(100 * c / fc).toFixed(2)} cm (1° of phase = ${(1000 * c / fc / 4 / 180).toFixed(3)} mm)`;
 }
-$('#bClear').onclick=clearScan;
-$('#bCsv').onclick=()=>{
-  if(!lastDb||!sonar) return;
-  const e=sonar.db('echo'), m=sonar.db('motion');
-  let s='# LOG (one row per second). above = dB over its ±40 cm neighbourhood; steady = echo minus flicker in dB\n'+
-    't_s,signal_db,mic_dbfs,e1_cm,e1_above,e1_steady,e2_cm,e2_above,e2_steady,e3_cm,e3_above,e3_steady,mv1_cm,mv1_above,mv2_cm,mv2_above,shown_object_cm,shown_movement_cm\n'+
-    runLog.join('\n')+'\n\n';
-  s+=`# PROFILE at save time. band_hz,${sonar.f1}-${sonar.f2},sample_rate,${sonar.sr},signal_db,${sonar.snrDb.toFixed(1)},peaks_cm,${(lastPk?.list||[]).map(p=>p.cm.toFixed(1)).join(' ')}\ndistance_cm,echo_db,motion_db\n`;
-  for(let i=0;i<=sonar.M;i++) s+=`${(i*sonar.cmPerTap).toFixed(2)},${e[i].toFixed(2)},${m[i].toFixed(2)}\n`;
-  download('sonar-echo.csv', s);
+$('band').onchange = bandInfo; bandInfo();
+$('vol').oninput = () => { $('volTxt').textContent = $('vol').value + '%'; if (outGain) outGain.gain.value = volGain(); };
+function volGain() { const v = $('vol').value / 100; return v * v; }
+
+async function wake() { try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { } }
+document.addEventListener('visibilitychange', () => { if (running && document.visibilityState === 'visible') wake(); });
+
+$('startBtn').onclick = () => running ? stop() : start().catch(err => { $('warn').textContent = 'Could not start: ' + err.message; stop(); });
+
+async function start() {
+  const [f0, f1] = $('band').value.split(',').map(Number);
+  ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+  stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  await ctx.resume();
+  const fs = ctx.sampleRate;
+  if (f1 > 0.47 * fs) throw new Error(`sample rate ${fs} Hz is too low for this band`);
+  eng = new Sonar.Engine({ fs, f0, f1, maxRange: +$('maxRange').value, gapM: +$('gap').value / 100, windowS: +$('winS').value });
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' })));
+  const src = ctx.createMediaStreamSource(stream);
+  const node = new AudioWorkletNode(ctx, 'sonar-rec', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+  outGain = ctx.createGain(); outGain.gain.value = volGain(); outGain.connect(ctx.destination);
+  const buf = ctx.createBuffer(1, eng.play.length, fs); buf.copyToChannel(eng.play, 0);
+  eng.requestBeep = () => {
+    const when = ctx.currentTime + 0.02, s = ctx.createBufferSource();
+    s.buffer = buf; s.connect(outGain); s.start(when); return Math.round(when * fs);
+  };
+  eng.onNoise = () => setStatus();
+  eng.onCycle = onCycle;
+  node.port.onmessage = ev => {
+    if (!running) return;
+    const { frame, data } = ev.data;
+    let pk = 0; for (let i = 0; i < data.length; i++) pk = Math.max(pk, Math.abs(data[i]));
+    const tnow = performance.now(); if (pk > micPeak || tnow - micPeakT > 700) { micPeak = pk; micPeakT = tnow; }
+    if (eng.now !== null && frame > eng.now) { // dropped audio: fill gap with zeros (max 0.5 s)
+      const gap = Math.min(frame - eng.now, Math.round(0.5 * fs)); eng.feed(new Float32Array(gap)); eng.now = frame;
+    }
+    if (eng.now !== null && frame < eng.now) { const skip = eng.now - frame; if (skip >= data.length) return; eng.feed(data.subarray(skip)); }
+    else eng.feed(data, frame);
+  };
+  log = []; lastRes = null; selDist = null;
+  wfOff.width = eng.K; wfOff.height = 300; const g = wfOff.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, wfOff.width, wfOff.height);
+  running = true; $('startBtn').textContent = 'Stop'; $('startBtn').className = 'stop';
+  for (const id of ['band', 'maxRange', 'gap', 'winS']) $(id).disabled = true;
+  $('warn').textContent = ''; $('status').textContent = 'Measuring noise floor – stay quiet for 1.5 s…';
+  wake();
+}
+
+function stop() {
+  running = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (ctx) ctx.close();
+  if (wakeLock) { wakeLock.release().catch(() => { }); wakeLock = null; }
+  ctx = stream = outGain = null;
+  $('startBtn').textContent = 'Start'; $('startBtn').className = 'go';
+  for (const id of ['band', 'maxRange', 'gap', 'winS']) $(id).disabled = false;
+}
+
+function onCycle(res) {
+  lastRes = res;
+  log.push({ i: res.index, t: res.t, len: res.len, listen: res.listenS, snr: res.snrDb, reason: res.reason,
+    shift: !!res.shift, skipped: !!res.skipped, echoes: res.echoes || [], warn: res.warn.slice() });
+  if (log.length > 50000) log.shift();
+  if (res.ok) wfRow(res);
+  if (!drawPending) { drawPending = true; requestAnimationFrame(() => { drawPending = false; redraw(); }); }
+}
+
+function recentLens() { const L = []; for (let i = log.length - 1; i >= 0 && L.length < 10; i--) if (log[i].len) L.push(log[i].len); return L; }
+
+function setStatus() {
+  if (!eng) return;
+  const r = lastRes, L = recentLens();
+  const mean = L.length ? L.reduce((a, b) => a + b, 0) / L.length : null;
+  const lines = [];
+  const mic = micPeak > 0 ? (20 * Math.log10(micPeak)).toFixed(0) + ' dBFS' : '–';
+  lines.push(`Signal: ${r && r.ok ? 'direct ' + r.snrDb.toFixed(0) + ' dB above noise' : '–'} · Mic peak ${mic} · fs ${eng.fs} Hz`);
+  if (mean) {
+    const rate = 1 / mean;
+    lines.push(`Cycle ${(L[0]).toFixed(2)} s (avg ${mean.toFixed(2)} s) · ${rate.toFixed(2)} cycles/s · cycles ${log.length}`);
+    lines.push(`Fastest detectable repeat ≈ ${(rate / 2).toFixed(2)} Hz (${(30 * rate).toFixed(0)}/min, period ≥ ${(2 * mean).toFixed(1)} s)`);
+    const q = eng.lambda / 4 * 1000;
+    lines.push(`Unambiguous step between cycles λ/4 = ${q.toFixed(1)} mm → plain tracking up to ≈ ${(q / mean).toFixed(1)} mm/s (faster: model-guided)`);
+  }
+  const a = eng.analysis;
+  if (a.status === 'collecting') lines.push(`Movement analysis: collecting (${a.T ? a.T.toFixed(0) : 0} of ≥10 s, ${a.n || 0} of ≥12 cycles; window ${eng.windowS} s)`);
+  else if (a.status === 'paused') lines.push('Movement analysis: paused (phone moved), restarting');
+  else lines.push(`Movement analysis: ${a.n} cycles over ${a.T.toFixed(0)} s, ${a.items.length} candidate(s) checked`);
+  $('status').textContent = lines.join('\n');
+  const w = r ? r.warn.slice() : [];
+  if (micPeak > 0.98) w.push('mic clipping – lower volume');
+  $('warn').textContent = w.join(' · ');
+}
+
+function fit(cv) { const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight; if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); } const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); return { g, w, h }; }
+
+function distAxis(g, w, h, x0, x1, pad) {
+  const d0 = eng.lagToDist(eng.lagMin) * 100, d1 = eng.lagToDist(eng.lagMax) * 100;
+  g.fillStyle = '#555'; g.font = '11px sans-serif'; g.textAlign = 'center';
+  const step = d1 - d0 > 200 ? 50 : 25;
+  for (let d = Math.ceil(d0 / step) * step; d <= d1; d += step) { const x = x0 + (d - d0) / (d1 - d0) * (x1 - x0); g.fillText(d + '', x, h - 3); g.fillStyle = '#eee'; g.fillRect(x, pad, 1, h - pad - 16); g.fillStyle = '#555'; }
+  g.textAlign = 'right'; g.fillText('cm', w - 2, h - 3);
+  return { d0, d1 };
+}
+
+function redraw() { setStatus(); drawTrace(); drawWF(); drawList(); drawDetail(); }
+
+function drawTrace() {
+  const { g, w, h } = fit($('trace')); g.clearRect(0, 0, w, h);
+  if (!eng || !lastRes || !lastRes.ok) return;
+  const r = lastRes, x0 = 32, x1 = w - 6, top = 8, bot = h - 18, dbMin = -70, dbMax = 0;
+  const { d0, d1 } = distAxis(g, w, h, x0, x1, top);
+  const X = q => x0 + (eng.lagToDist(eng.lagMin + q) * 100 - d0) / (d1 - d0) * (x1 - x0);
+  const Y = db => top + (dbMax - Math.max(dbMin, Math.min(dbMax, db))) / (dbMax - dbMin) * (bot - top);
+  g.fillStyle = '#555'; g.font = '11px sans-serif'; g.textAlign = 'right';
+  for (let db = dbMin; db <= dbMax; db += 10) { g.fillText(db + '', x0 - 3, Y(db) + 4); g.fillStyle = '#f0f0f0'; g.fillRect(x0, Y(db), x1 - x0, 1); g.fillStyle = '#555'; }
+  g.setLineDash([4, 4]); g.strokeStyle = '#999'; g.beginPath(); const yn = Y(20 * Math.log10(r.nRel)); g.moveTo(x0, yn); g.lineTo(x1, yn); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = '#1f5fbf'; g.lineWidth = 1.2; g.beginPath();
+  for (let q = 0; q < eng.K; q++) { const x = X(q), y = Y(20 * Math.log10(r.mag[q] + 1e-12)); q ? g.lineTo(x, y) : g.moveTo(x, y); }
+  g.stroke();
+  const top5 = (r.echoes || []).slice().sort((a, b) => b.db - a.db).slice(0, 6);
+  g.fillStyle = '#000'; g.textAlign = 'center'; g.font = '11px sans-serif';
+  for (const e of top5) { const x = x0 + (e.distCm - d0) / (d1 - d0) * (x1 - x0); g.fillText(e.distCm.toFixed(1), x, Math.max(10, Y(e.db) - 4)); }
+}
+
+function wfRow(r) {
+  const g = wfOff.getContext('2d');
+  g.drawImage(wfOff, 0, 0, wfOff.width, wfOff.height - 2, 0, 2, wfOff.width, wfOff.height - 2);
+  const img = g.createImageData(eng.K, 2);
+  let mx = 0; for (let q = 0; q < eng.K; q++) mx = Math.max(mx, r.mag[q]);
+  for (let q = 0; q < eng.K; q++) {
+    const db = 20 * Math.log10(r.mag[q] / mx + 1e-12), v = Math.round(255 * Math.max(0, Math.min(1, (db + 45) / 45)));
+    for (let row = 0; row < 2; row++) { const o = 4 * (row * eng.K + q); if (r.shift) { img.data[o] = 200; img.data[o + 1] = 0; img.data[o + 2] = 0; } else { img.data[o] = img.data[o + 1] = img.data[o + 2] = v; } img.data[o + 3] = 255; }
+  }
+  g.putImageData(img, 0, 0);
+}
+
+function drawWF() {
+  const { g, w, h } = fit($('wf')); g.clearRect(0, 0, w, h);
+  if (!eng) return;
+  const x0 = 4, x1 = w - 4, top = 10;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(wfOff, x0, top, x1 - x0, h - top - 18);
+  const { d0, d1 } = distAxis(g, w, h, x0, x1, h);
+  g.fillStyle = '#e07000';
+  for (const m of eng.analysis.moving || []) { const x = x0 + (m.distCm - d0) / (d1 - d0) * (x1 - x0); g.beginPath(); g.moveTo(x - 5, 0); g.lineTo(x + 5, 0); g.lineTo(x, top); g.fill(); }
+}
+
+function drawList() {
+  const a = eng ? eng.analysis : null, body = $('movBody');
+  const mv = a ? a.moving : [];
+  if (!mv.length) {
+    body.innerHTML = `<tr><td colspan="5" class="muted">${!a ? '–' : a.status === 'collecting' ? 'collecting data…' : a.status === 'paused' ? 'paused – phone moved' : 'none found'}</td></tr>`;
+  } else {
+    if (selDist === null || !mv.some(m => Math.abs(m.distCm - selDist) < 5)) selDist = mv[0].distCm;
+    body.innerHTML = mv.map(m => `<tr data-d="${m.distCm}" class="${Math.abs(m.distCm - selDist) < 5 ? 'sel' : ''}"><td>${m.distCm.toFixed(1)} cm</td><td>${m.ppMm.toFixed(2)} mm</td><td>${m.periodS.toFixed(2)} s<br><span class="muted">${m.periodCycles.toFixed(1)} cyc</span></td><td>${m.perMin.toFixed(1)}</td><td>${(100 * m.conf).toFixed(0)}%</td></tr>`).join('');
+    for (const tr of body.querySelectorAll('tr')) tr.onclick = () => { selDist = +tr.dataset.d; drawList(); drawDetail(); };
+  }
+  const rejected = a && a.items ? a.items.filter(i => !i.moving) : [];
+  $('movInfo').textContent = rejected.length ? 'Checked but not repeating: ' + rejected.map(i => `${i.distCm.toFixed(0)} cm (${i.conf !== undefined ? (100 * i.conf).toFixed(0) + '%' : i.note || '-'})`).join(', ') : '';
+}
+
+function drawDetail() {
+  const { g, w, h } = fit($('detail')); g.clearRect(0, 0, w, h);
+  const mv = eng && eng.analysis.moving ? eng.analysis.moving : [];
+  const m = mv.find(x => selDist !== null && Math.abs(x.distCm - selDist) < 5);
+  if (!m) { $('detailInfo').textContent = 'Tap a moving echo above.'; return; }
+  const { t, d } = m.series, c = m.coef, n = t.length, wv = 2 * Math.PI * m.freqHz;
+  const det = Array.from(d, (v, i) => v - c[0] - c[1] * t[i]);
+  const per = tt => c[2] * Math.cos(wv * tt) + c[3] * Math.sin(wv * tt) + c[4] * Math.cos(2 * wv * tt) + c[5] * Math.sin(2 * wv * tt);
+  let lo = Math.min(...det), hi = Math.max(...det); const pad = 0.1 * (hi - lo || 1); lo -= pad; hi += pad;
+  const x0 = 40, x1 = w - 6, top = 8, bot = h - 20, T = t[n - 1];
+  const X = v => x0 + v / T * (x1 - x0), Y = v => bot - (v - lo) / (hi - lo) * (bot - top);
+  g.fillStyle = '#555'; g.font = '11px sans-serif'; g.textAlign = 'right';
+  for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4; g.fillText(v.toFixed(2), x0 - 3, Y(v) + 4); g.fillStyle = '#f0f0f0'; g.fillRect(x0, Y(v), x1 - x0, 1); g.fillStyle = '#555'; }
+  g.textAlign = 'center'; for (let s = 0; s <= T; s += T > 40 ? 10 : 5) g.fillText(s + ' s', X(s), h - 4);
+  g.strokeStyle = '#e07000'; g.lineWidth = 1.5; g.beginPath();
+  for (let k = 0; k <= 400; k++) { const tt = T * k / 400, y = Y(per(tt)); k ? g.lineTo(X(tt), y) : g.moveTo(X(tt), y); } g.stroke();
+  g.strokeStyle = '#1f5fbf'; g.lineWidth = 1; g.beginPath();
+  for (let i = 0; i < n; i++) { const x = X(t[i]), y = Y(det[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke();
+  g.fillStyle = '#1f5fbf'; for (let i = 0; i < n; i++) { g.beginPath(); g.arc(X(t[i]), Y(det[i]), 2, 0, 7); g.fill(); }
+  $('detailInfo').textContent = `Echo at ${m.distCm.toFixed(1)} cm · fine distance in mm (+ = farther), straight-line trend removed. ` +
+    `Blue = one point per cycle, orange = fitted repeating pattern. Phase: ${m.method}, unwrapping: ${m.unwrap} (arc ${m.arcDeg.toFixed(0)}°).`;
+}
+
+$('csvBtn').onclick = () => {
+  if (!log.length) { $('warn').textContent = 'Nothing to save yet.'; return; }
+  const L = [];
+  L.push(`# phone sonar export ${new Date().toISOString()}`);
+  if (eng) L.push(`# band_hz ${eng.f0}-${eng.f1}; fs ${eng.fs}; c 343; max_range_m ${eng.maxRange}; gap_cm ${eng.gap * 100}; window_s ${eng.windowS}; range_res_cm ${(eng.rangeRes * 100).toFixed(2)}; wavelength_mm ${(eng.lambda * 1000).toFixed(3)}`);
+  L.push('cycle,beep_time_s,cycle_len_s,listen_s,end_reason,direct_snr_db,phone_moved,skipped,warnings,echoes(dist_cm:strength_db:fine_mm)');
+  for (const r of log) L.push([r.i, r.t.toFixed(5), r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.snr !== undefined ? r.snr.toFixed(1) : '', r.shift ? 1 : 0, r.skipped ? 1 : 0,
+    '"' + r.warn.join('; ') + '"', r.echoes.map(e => `${e.distCm.toFixed(2)}:${e.db.toFixed(1)}:${e.fineMm.toFixed(3)}`).join(' ')].join(','));
+  const mv = eng ? eng.analysis.moving || [] : [];
+  L.push(''); L.push('# moving echoes (at export)');
+  L.push('dist_cm,movement_pp_mm,period_s,per_min,period_cycles,confidence,peak_ratio,phase_method');
+  for (const m of mv) L.push([m.distCm.toFixed(2), m.ppMm.toFixed(3), m.periodS.toFixed(3), m.perMin.toFixed(2), m.periodCycles.toFixed(2), m.conf.toFixed(3), m.pratio.toFixed(1), m.method].join(','));
+  for (const m of mv) {
+    L.push(''); L.push(`# fine distance series for echo at ${m.distCm.toFixed(2)} cm`); L.push('beep_time_s,fine_mm');
+    for (let i = 0; i < m.series.t.length; i++) L.push((m.series.t0Abs + m.series.t[i]).toFixed(5) + ',' + m.series.d[i].toFixed(4));
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([L.join('\n')], { type: 'text/csv' }));
+  a.download = 'sonar_' + new Date().toISOString().replace(/[:.]/g, '-') + '.csv'; a.click();
 };
 
-/* ---------- Knock mode ---------- */
-let kFloor=0, kPending=null, kLast=-1e9, knocks=[], kLabel='A', kShow=null;
-function knockBlock(d){
-  const sr=ac.sampleRate, start=total-d.length, KB=256;
-  for(let b=0;b+KB<=d.length;b+=KB){
-    let s=0; for(let i=0;i<KB;i++) s+=d[b+i]*d[b+i]; const rms=Math.sqrt(s/KB), t=start+b;
-    if(kFloor===0){ kFloor=rms+1e-5; continue; }
-    if(!kPending && t>startAt && rms>Math.max(8*kFloor, 0.01) && t-kLast>0.45*sr){
-      kPending={s0:t-Math.round(0.005*sr), end:t+Math.round(0.3*sr), floor:kFloor}; kLast=t;
-    } else if(rms<3*kFloor) kFloor=0.97*kFloor+0.03*rms;
-    else kFloor=0.999*kFloor+0.001*rms;
-  }
-  if(kPending && total>=kPending.end){
-    const L=kPending.end-kPending.s0, x=new Float32Array(L);
-    for(let i=0;i<L;i++) x[i]=ring[(kPending.s0+i)&RM];
-    const r=analyzeKnock(x, sr, kPending.floor); kPending=null;
-    if(r.peak<0.01) return;
-    r.label=kLabel; r.t=new Date().toISOString(); knocks.push(r); kShow=r; renderKnocks(); drawKnock();
-  }
-}
-async function startKnock(){
-  try{ await openAudio(); }catch(e){ $('#kStat').textContent='Microphone blocked: '+e.message; closeAudio(); return; }
-  mode='knock'; kFloor=0; kPending=null; startAt=total+Math.round(0.5*ac.sampleRate);
-  $('#kStart').textContent='Stop'; $('#kStart').className='stop'; $('#kStat').textContent='Listening… knock now';
-}
-$('#kStart').onclick=()=> mode==='knock' ? stopAll() : (stopAll(), startKnock());
-document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('.chips button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); kLabel=b.textContent; });
-function groups(){ const g={};
-  for(const k of knocks){ const o=g[k.label]||(g[k.label]={n:0,ring:0,cent:0,clip:0}); o.n++; o.ring+=k.ringMs; o.cent+=k.centroidHz; o.clip+=k.clipped?1:0; }
-  for(const k in g){ g[k].ring/=g[k].n; g[k].cent/=g[k].n; } return g; }
-function renderKnocks(){
-  const g=groups(), v=knockVerdicts(g), keys=Object.keys(g).sort();
-  if(!keys.length){ $('#kTab').innerHTML='<tr><td colspan="5" class="small">No knocks yet</td></tr>'; return; }
-  $('#kTab').innerHTML=keys.map(k=>{ const o=g[k], r=v[k]||'Knock another spot';
-    const cls=r.startsWith('Hollow')||r.startsWith('Maybe')?'hollow':r==='Solid'?'solid':'small';
-    return `<tr><td>${k}</td><td>${o.n}${o.clip?' <span class="warn">(too hard)</span>':''}</td><td>${o.ring.toFixed(0)} ms</td><td>${o.cent.toFixed(0)} Hz</td><td class="${cls}">${r}</td></tr>`; }).join('');
-}
-function drawKnock(){
-  const {c,w,h}=fit($('#kcv')); c.clearRect(0,0,w,h); const r=kShow; if(!r) return;
-  $('#kLast').textContent=`Last knock (spot ${r.label}): rings ${r.ringMs.toFixed(0)} ms · strongest tone ${r.peakHz.toFixed(0)} Hz${r.clipped?' · too hard, knock softer':''}`;
-  const h1=h*0.5-6, n=Math.min(r.env.length, Math.round(0.15*ac.sampleRate));
-  c.strokeStyle='#3ee6c4'; c.beginPath();
-  for(let i=0;i<n;i+=4){ const x=i/n*w, y=h1-(r.env[i]/r.peak)*(h1-10); i?c.lineTo(x,y):c.moveTo(x,y); } c.stroke();
-  c.fillStyle='#7fa1b3'; c.font='11px system-ui'; c.fillText('how it fades (0–150 ms)', 4, 12);
-  const kMax=Math.floor(3000/r.binHz), kMin=Math.ceil(60/r.binHz); let mx=0; for(let k=kMin;k<=kMax;k++) mx=Math.max(mx, r.spec[k]||0);
-  c.strokeStyle='#ffb547'; c.beginPath();
-  for(let k=kMin;k<=kMax;k++){ const x=(k-kMin)/(kMax-kMin)*w, y=h-4-((r.spec[k]||0)/mx)*(h1-14); k>kMin?c.lineTo(x,y):c.moveTo(x,y); } c.stroke();
-  c.fillText('tones 60 Hz – 3 kHz (left = low)', 4, h1+18);
-}
-$('#kClear').onclick=()=>{ knocks=[]; kShow=null; renderKnocks(); drawKnock(); $('#kLast').textContent='Last knock'; };
-$('#kCsv').onclick=()=>{ let s='time,spot,ring_ms,peak_hz,centroid_hz,low_frac,clipped\n';
-  knocks.forEach(k=>s+=`${k.t},${k.label},${k.ringMs.toFixed(1)},${k.peakHz.toFixed(0)},${k.centroidHz.toFixed(0)},${k.lowFrac.toFixed(3)},${k.clipped?1:0}\n`);
-  download('knock-test.csv', s); };
-
-function download(name, text){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type:'text/csv'})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 2000); }
-function tab(which){
-  stopAll();
-  $('#tEcho').classList.toggle('on', which==='echo'); $('#tKnock').classList.toggle('on', which==='knock'); $('#tMap').classList.toggle('on', which==='map');
-  $('#pMap').classList.toggle('hide', which!=='map');
-  $('#pEcho').classList.toggle('hide', which!=='echo'); $('#pKnock').classList.toggle('hide', which!=='knock');
-}
-$('#tEcho').onclick=()=>tab('echo'); $('#tMap').onclick=()=>tab('map'); $('#tKnock').onclick=()=>tab('knock');
-/* ---------- Room map ---------- */
-let rmap=null, head=null, head0=null, tilt=0, orientOn=false, lastHead=null, lastHeadT=0, turnRate=0, mapDrawT=0, mapImg=null;
-function onOrient(e){
-  if(e.alpha==null) return;
-  if(head0===null) head0=e.alpha;
-  head=((head0-e.alpha)%360+360)%360;          // clockwise from the start direction
-  tilt=Math.max(Math.abs(e.beta||0), Math.abs(e.gamma||0));
-  const t=performance.now()/1000;
-  if(lastHead!==null && t>lastHeadT){ let d=head-lastHead; d=((d+540)%360)-180; turnRate=0.8*turnRate+0.2*Math.abs(d)/(t-lastHeadT); }
-  lastHead=head; lastHeadT=t;
-}
-async function enableOrient(){
-  if(orientOn) return true;
-  let ok=true;
-  try{ if(typeof DeviceOrientationEvent!=='undefined' && DeviceOrientationEvent.requestPermission){ ok = (await DeviceOrientationEvent.requestPermission())==='granted'; } }catch(e){}
-  addEventListener('deviceorientation', onOrient); orientOn=true; return ok;   // listen anyway; events simply won't arrive if refused
-}
-function mapBlock(){
-  if(!sonar || total<startAt || total<sonar.P) return;
-  const P=sonar.P; for(let i=0;i<P;i++) win[i]=ring[(total-P+i)&RM];
-  if(!sonar.process(win)) return; frames++;
-  if(head===null || tilt>35 || turnRate>45) return;      // skip scans taken while tilted or spinning
-  rmap.add(head, sonar.raw, sonar.cmPerTap);
-}
-async function startMap(){
-  const ok=await enableOrient();
-  try{ await openAudio(); }catch(e){ $('#mStat').textContent='Microphone blocked: '+e.message; closeAudio(); return; }
-  head0=null; head=null;
-  const rc=+$('#mRange').value; if(!rmap || rmap.maxCm!==rc) rmap=new RoomMap(rc);
-  mode='map'; buildSonar(rc);
-  $('#mStart').textContent='Stop'; $('#mStart').className='stop'; mapLoop();
-}
-$('#mStart').onclick=()=> mode==='map' ? stopAll() : (stopAll(), startMap());
-$('#mClear').onclick=()=>{ rmap=new RoomMap(+$('#mRange').value); head0=null; mapImg=null; drawMap(); };
-$('#mRange').onchange=()=>{ rmap=new RoomMap(+$('#mRange').value); mapImg=null; if(mode==='map'){ sonar.setRange(rmap.maxCm); } drawMap(); };
-function mapLoop(){
-  if(mode!=='map') return;
-  const now=performance.now();
-  if(now-mapDrawT>250){ mapDrawT=now; mapImg=rmap.image(); drawMap();
-    const cov=Math.round(mapImg.visited/36*100);
-    let st=`Facing ${head===null?'—':Math.round(head)+'°'} · scanned ${cov}% of the circle · signal ${sonar?sonar.snrDb.toFixed(0):'—'} dB`;
-    if(head===null) st='<span class="warn">No direction data yet. This needs a phone with a gyroscope.</span>';
-    else if(tilt>35) st+=' · <span class="warn">Hold the phone flat</span>';
-    else if(turnRate>45) st+=' · <span class="warn">Turn slower</span>';
-    $('#mStat').innerHTML=st; }
-  requestAnimationFrame(mapLoop);
-}
-function drawMap(){
-  const cv=$('#mapcv'), r=cv.getBoundingClientRect(), d=devicePixelRatio||1;
-  cv.width=Math.round(r.width*d); cv.height=Math.round(r.width*d);
-  const c=cv.getContext('2d'); c.setTransform(d,0,0,d,0,0);
-  const W=r.width, cx=W/2, cy=W/2, R=W/2-18; c.fillStyle='#040c12'; c.fillRect(0,0,W,W);
-  if(!rmap) return; const img=mapImg||rmap.image(), nB=rmap.nB, nR=rmap.nR, rc=R/nR;
-  const ang=b=>(-90+b*360/nB)*Math.PI/180;
-  for(let b=0;b<nB;b++) for(let k=0;k<nR;k++){
-    const v=img.ex[b][k]; let col;
-    if(isNaN(v)) col='#11202b'; else { const i=Math.max(0,Math.min(255,Math.round(v/14*255))); col=`rgb(${LUT[i*3]},${LUT[i*3+1]},${LUT[i*3+2]})`; }
-    c.fillStyle=col; c.beginPath(); c.arc(cx,cy,(k+1)*rc,ang(b),ang(b+1)); c.arc(cx,cy,k*rc,ang(b+1),ang(b),true); c.closePath(); c.fill();
-  }
-  const blind=25/rmap.maxCm*R; c.fillStyle='rgba(4,12,18,.85)'; c.beginPath(); c.arc(cx,cy,blind,0,7); c.fill();
-  c.strokeStyle='rgba(127,161,179,.35)'; c.fillStyle='#7fa1b3'; c.font='11px system-ui';
-  const st=rmap.maxCm<=200?50:100;
-  for(let cm=st; cm<=rmap.maxCm; cm+=st){ const rr=cm/rmap.maxCm*R; c.beginPath(); c.arc(cx,cy,rr,0,7); c.stroke(); c.fillText(cm>=100?cm/100+' m':cm+' cm', cx+3, cy-rr+12); }
-  c.fillText('start ↑', cx-18, 12);
-  for(const p of img.peaks){ const a=(p.deg-90)*Math.PI/180, rr=p.cm/rmap.maxCm*R; c.fillStyle='#fff'; c.beginPath(); c.arc(cx+rr*Math.cos(a), cy+rr*Math.sin(a), 3.5, 0, 7); c.fill(); }
-  c.fillStyle='#3ee6c4'; c.beginPath(); c.arc(cx,cy,5,0,7); c.fill();
-  if(head!==null){ const a=(head-90)*Math.PI/180; c.strokeStyle='#3ee6c4'; c.lineWidth=2; c.beginPath(); c.moveTo(cx,cy); c.lineTo(cx+R*Math.cos(a), cy+R*Math.sin(a)); c.stroke(); c.lineWidth=1; }
-}
-$('#mCsv').onclick=()=>{ if(!rmap) return; const img=rmap.image();
-  let s='# Room map. heading_deg clockwise from start; excess_db = echo above the median of all directions at that distance\n# PEAKS\nheading_deg,distance_cm,excess_db\n';
-  img.peaks.forEach(p=>s+=`${p.deg.toFixed(0)},${p.cm.toFixed(0)},${p.ex.toFixed(1)}\n`);
-  s+='\n# GRID\nheading_deg,scans,'+Array.from({length:rmap.nR},(_,k)=>((k+0.5)*rmap.maxCm/rmap.nR).toFixed(0)).join(',')+'\n';
-  for(let b=0;b<rmap.nB;b++) s+=`${(b+0.5)*10},${rmap.cnt[b]},`+Array.from(img.ex[b]).map(v=>isNaN(v)?'':v.toFixed(1)).join(',')+'\n';
-  download('room-map.csv', s); };
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden && mode) stopAll(); });
-</script></body></html>
+window.addEventListener('resize', () => { if (eng) redraw(); });
+setInterval(() => { if (running) setStatus(); }, 500);
+</script>
+</body>
+</html>
