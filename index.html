@@ -113,7 +113,7 @@
 <ol>
   <li><b>Beep:</b> Hann-windowed linear chirp, 10 ms. Range resolution c/(2·bandwidth) with c = 343 m/s.</li>
   <li><b>Detection:</b> matched filter against the complex (analytic) chirp, FFT overlap-save, so each output has envelope and phase.</li>
-  <li><b>Beep detection:</b> the beep has arrived when the matched-filter peak in a 10 ms block exceeds 30× (15 dB) the mean noise power. (Earlier versions used the block average, which diluted the short peak by ~18 dB.)</li>
+  <li><b>Beep detection:</b> the beep has arrived when the matched-filter peak in a 10 ms block exceeds 30× (15 dB) the mean noise power. Once 5 cycles with direct ≥ 20 dB have shown the playback-to-mic delay, that delay (median of the last 15) is used: triggers earlier than 20 ms before it are ignored and the direct path is searched only within ±10 ms of it, so background noise just before the beep can't be mistaken for it. After 5 cycles with no beep the learned delay is forgotten.</li>
   <li><b>Cycle end:</b> mean matched-filter power in non-overlapping 10 ms blocks must stay below 2× the noise floor (+3 dB) for 5 blocks (50 ms), and not before echoes from max range have returned. Safety max 5 s. If no beep is heard within 1 s the cycle is skipped.</li>
   <li><b>Noise floor:</b> median 10 ms block power during 1.5 s of silence before the first beep. After every cycle: floor ← 0.95·floor + 0.05·(power of the 50 ms quiet tail, clamped to ±50% of floor).</li>
   <li><b>Timing reference:</b> direct path = strongest matched-filter peak next to the first loud block; its time is refined by parabolic interpolation of the envelope. Every echo is measured relative to it (complex ratio), which cancels latency jitter, clock drift and gain changes.</li>
@@ -123,7 +123,8 @@
   <li><b>Finding candidates:</b> for every distance, the variation of the complex echo over the window is computed; peaks above 2× the median variation are candidates (max 6). Static echoes don’t vary, so they are ignored.</li>
   <li><b>Period:</b> fine-distance series linearly interpolated onto a uniform time grid (step = median cycle length), straight-line trend removed, periodogram peak between 2/window and the Nyquist limit, refined by parabolic interpolation.</li>
   <li><b>Size & confidence:</b> least-squares fit of line + fundamental + 2nd harmonic on the original (non-resampled) samples. Movement = peak-to-peak of the periodic part. Confidence = share of the detrended variance explained by that fit (R²). Reported only if R² ≥ 50% and the spectral peak is ≥ 8× the median.</li>
-  <li><b>Phone moved:</b> compared with the average of the last 5 cycles: echo-strength profile correlation &lt; 0.8, or direct path level change &gt; 3 dB, or ≥ 60% of the echo peaks (at least 3) jump in phase by &gt; 45°. Such cycles are skipped; if it lasts ≥ 3 cycles and ≥ 0.3 s, the history is cleared and the next 3 cycles are skipped.</li>
+  <li><b>Bad cycles:</b> a cycle is ignored entirely (not analysed, not used as reference) if its direct path is weaker than 20 dB above noise or arrives more than 2.5 ms away from the learned delay – that means noise masked the beep.</li>
+  <li><b>Phone moved:</b> compared with the average of the last 5 good cycles: echo-strength profile correlation &lt; 0.6, or direct path level change &gt; 6 dB, or ≥ 70% of the echo peaks (at least 4) jump in phase by &gt; 45°. Such cycles are skipped; if it lasts ≥ 3 cycles and ≥ 1 s, the history is cleared and the next 3 cycles are skipped.</li>
   <li><b>Limits:</b> movement is only sampled once per cycle; the fastest detectable repeat is half the cycle rate (shown live). Echoes come from all directions (floor, ceiling, walls); distance is straight-line.</li>
 </ol>
 </details>
@@ -425,7 +426,7 @@ class Engine {
     const cap = Math.ceil((this.maxCycleS + 0.6) * fs) + this.N;
     this.raw = new Float32Array(cap); this.yr = new Float32Array(cap); this.yi = new Float32Array(cap);
     this.state = 'noise'; this.now = null; this.floor = 0; this.len = 0; this.mfDone = 0;
-    this.cyc = null; this.hist = []; this.refMags = []; this.refA0 = []; this.refC = []; this.lastAnaT = -1e9; this.suspect = 0; this.settle = 0; this.cycleIndex = 0;
+    this.cyc = null; this.hist = []; this.refMags = []; this.refA0 = []; this.refC = []; this.lastAnaT = -1e9; this.latHist = []; this.latMed = null; this.noBeepRun = 0; this.suspect = 0; this.settle = 0; this.cycleIndex = 0;
     this.lastRes = null; this.analysis = { status: 'collecting', items: [], moving: [] };
     this.requestBeep = null; this.onCycle = null; this.onNoise = null;
   }
@@ -481,7 +482,8 @@ class Engine {
     while ((c.nWin + 1) * win <= this.mfDone) {
       const j = c.nWin++, E = this._winE(j); c.E.push(E);
       if (c.arr < 0) {
-        if (this._winP(j) > this.floor * this.arrivePeakFactor) c.arr = j;
+        const early = this.latMed !== null && (c.origin - c.F) + (j + 1) * win < this.latMed - 0.02 * fs;
+        if (!early && this._winP(j) > this.floor * this.arrivePeakFactor) c.arr = j;
         else if ((j + 1) * win > this.noBeepS * fs) return this._end('nobeep', j);
       } else {
         c.quiet = E < this.floor * this.quietFactor ? c.quiet + 1 : 0;
@@ -500,7 +502,7 @@ class Engine {
     }
     let pk = 0, ss = 0; for (let n = 0; n < this.len; n++) { const v = this.raw[n]; ss += v * v; if (Math.abs(v) > pk) pk = Math.abs(v); }
     const res = { index: this.cycleIndex++, F: c.F, micPeak: pk, micRms: Math.sqrt(ss / Math.max(1, this.len)), t: c.F / this.fs, listenS: (j + 1) * this.win / this.fs, reason, ok: false, warn: [], floor: this.floor };
-    if (reason === 'nobeep') res.warn.push('no beep heard – raise volume');
+    if (reason === 'nobeep') { res.warn.push('no beep heard – raise volume'); if (++this.noBeepRun >= 5) { this.latHist = []; this.latMed = null; } } else this.noBeepRun = 0;
     if (reason === 'max') res.warn.push('cycle hit 5 s limit – room very echoey or noisy');
     if (reason !== 'nobeep') this._analyse(c, res);
     this.lastRes = res;
@@ -518,7 +520,8 @@ class Engine {
 
   _analyse(c, res) {
     const yr = this.yr, yi = this.yi, win = this.win;
-    const a0 = Math.max(1, (c.arr - 1) * win), a1 = Math.min(this.mfDone - 2, (c.arr + 4) * win);
+    let a0 = Math.max(1, (c.arr - 1) * win), a1 = Math.min(this.mfDone - 2, (c.arr + 4) * win);
+    if (this.latMed !== null) { const e = Math.round(this.latMed - (c.origin - c.F)); a0 = Math.max(1, e - Math.round(0.01 * this.fs)); a1 = Math.min(this.mfDone - 2, e + Math.round(0.01 * this.fs)); }
     let idx = a0, best = -1;
     for (let n = a0; n <= a1; n++) { const m = yr[n] * yr[n] + yi[n] * yi[n]; if (m > best) { best = m; idx = n; } }
     const env = n => Math.hypot(yr[n], yi[n]);
@@ -533,6 +536,11 @@ class Engine {
       mag[q] = Math.hypot(pr[q], pi[q]);
     }
     const nRel = Math.sqrt(this.floor) / A0;
+    res.latencyMs = ((c.origin - c.F) + t0) / this.fs * 1000;
+    if (10 * Math.log10(A0 * A0 / this.floor) >= 20) {
+      this.latHist.push((c.origin - c.F) + t0); if (this.latHist.length > 15) this.latHist.shift();
+      if (this.latHist.length >= 5) this.latMed = median(this.latHist);
+    }
     Object.assign(res, { ok: true, t0Frame: (c.origin || c.F) + t0, A0, snrDb: 10 * Math.log10(A0 * A0 / this.floor), nRel, pr, pi, mag });
     if (res.snrDb < 20) res.warn.push('weak signal – raise volume or move phone');
     // echo list
@@ -542,6 +550,12 @@ class Engine {
       ech.push({ q, distCm: this.lagToDist(this.lagMin + q + d) * 100, db: 20 * Math.log10(b), fineMm: Math.atan2(pi[q], pr[q]) * k2mm });
     }
     ech.sort((a, b) => b.db - a.db); res.echoes = ech.slice(0, 12).sort((a, b) => a.distCm - b.distCm);
+    // a valid cycle has a strong direct path at the learned delay; anything else is noise, not the room
+    const latOk = this.latMed === null || Math.abs(res.latencyMs / 1000 * this.fs - this.latMed) <= 0.0025 * this.fs;
+    if (res.snrDb < 20 || !latOk) {
+      res.skipped = true; res.bad = true; res.warn.push('bad cycle (beep masked by noise) – ignored');
+      res.analysis = this.analysis; return;
+    }
     // phone moved?
     let shift = false;
     if (this.refMags.length >= 3) {
@@ -563,11 +577,11 @@ class Engine {
         nPk++; const dph = Math.atan2(pi[q] * refR[q] - pr[q] * refI[q], pr[q] * refR[q] + pi[q] * refI[q]);
         if (Math.abs(dph) > Math.PI / 4) nJump++;
       }
-      res.profileCorr = corr; res.directChangeDb = dA; res.phaseJumpFrac = nPk >= 3 ? nJump / nPk : 0;
-      if (corr < 0.8 || Math.abs(dA) > 3 || (nPk >= 3 && nJump >= 0.6 * nPk)) shift = true;
+      res.profileCorr = corr; res.directChangeDb = dA; res.phaseJumpFrac = nPk >= 3 ? nJump / nPk : 0; res.nPeaks = nPk;
+      if (corr < 0.6 || Math.abs(dA) > 6 || (nPk >= 3 && nJump >= 0.7 * nPk)) shift = true;
     }
     if (shift && !this.suspect) this.suspectT = res.t;
-    if (shift && (++this.suspect < 3 || res.t - this.suspectT < 0.3)) {
+    if (shift && (++this.suspect < 3 || res.t - this.suspectT < 1.0)) {
       res.skipped = true; res.warn.push('cycle unlike the previous ones – skipped');
     } else if (shift) {
       res.shift = true; res.warn.push('phone moved/touched – history reset'); this.suspect = 0;
@@ -691,7 +705,7 @@ function stop() {
 
 function onCycle(res) {
   lastRes = res;
-  log.push({ i: res.index, F: res.F, micPeak: res.micPeak, micRms: res.micRms, t: res.t, len: res.len, listen: res.listenS, snr: res.snrDb, reason: res.reason,
+  log.push({ i: res.index, F: res.F, lat: res.latencyMs, micPeak: res.micPeak, micRms: res.micRms, t: res.t, len: res.len, listen: res.listenS, snr: res.snrDb, reason: res.reason,
     shift: !!res.shift, skipped: !!res.skipped, echoes: res.echoes || [], warn: res.warn.slice() });
   if (log.length > 50000) log.shift();
   if (res.ok) wfRow(res);
@@ -717,6 +731,7 @@ function showDiag() {
     `Audio: context ${ctxInfo.sampleRate} Hz, baseLatency ${ctxInfo.baseLatency !== undefined ? (1000 * ctxInfo.baseLatency).toFixed(1) + ' ms' : '?'}, outputLatency ${ctxInfo.outputLatency !== undefined ? (1000 * ctxInfo.outputLatency).toFixed(1) + ' ms' : '?'}, output route ${ctxInfo.route}`,
     `Last ${recent.length} cycles: beep heard in ${heard}; direct SNR median ${snrs.length ? snrs[snrs.length >> 1].toFixed(1) + ' dB' : '–'} (need ≥ 30 dB)`
   ];
+  lines.push(`Learned playback→mic delay: ${eng && eng.latMed !== null ? (eng.latMed / eng.fs * 1000).toFixed(2) + ' ms' : 'learning…'}`);
   if (recent.length) { const r = recent[recent.length - 1]; lines.push(`Mic during last cycle: peak ${dB(r.micPeak)} dBFS, rms ${dB(r.micRms)} dBFS`); }
   $('diag').textContent = lines.join('\n');
 }
@@ -877,8 +892,8 @@ $('csvBtn').onclick = () => {
   if (eng) L.push(`# band_hz ${eng.f0}-${eng.f1}; fs ${eng.fs}; c 343; max_range_m ${eng.maxRange}; gap_cm ${eng.gap * 100}; window_s ${eng.windowS}; range_res_cm ${(eng.rangeRes * 100).toFixed(2)}; wavelength_mm ${(eng.lambda * 1000).toFixed(3)}`);
   if (trackSettings) L.push('# mic_settings_applied ' + JSON.stringify(trackSettings).replace(/,/g, ';'));
   if (ctxInfo) L.push('# audio ' + JSON.stringify(ctxInfo).replace(/,/g, ';'));
-  L.push('cycle,beep_time_s,beep_frame,cycle_len_s,listen_s,end_reason,direct_snr_db,mic_peak_dbfs,mic_rms_dbfs,phone_moved,skipped,warnings,echoes(dist_cm:strength_db:fine_mm)');
-  for (const r of log) L.push([r.i, r.t.toFixed(5), r.F, r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.snr !== undefined ? r.snr.toFixed(1) : '', dB(r.micPeak), dB(r.micRms), r.shift ? 1 : 0, r.skipped ? 1 : 0,
+  L.push('cycle,beep_time_s,beep_frame,cycle_len_s,listen_s,end_reason,latency_ms,direct_snr_db,mic_peak_dbfs,mic_rms_dbfs,phone_moved,skipped,warnings,echoes(dist_cm:strength_db:fine_mm)');
+  for (const r of log) L.push([r.i, r.t.toFixed(5), r.F, r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.lat !== undefined ? r.lat.toFixed(3) : '', r.snr !== undefined ? r.snr.toFixed(1) : '', dB(r.micPeak), dB(r.micRms), r.shift ? 1 : 0, r.skipped ? 1 : 0,
     '"' + r.warn.join('; ') + '"', r.echoes.map(e => `${e.distCm.toFixed(2)}:${e.db.toFixed(1)}:${e.fineMm.toFixed(3)}`).join(' ')].join(','));
   const mv = eng ? eng.analysis.moving || [] : [];
   L.push(''); L.push('# moving echoes (at export)');
