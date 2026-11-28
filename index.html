@@ -83,7 +83,7 @@
 
 <h2>2. Cycles waterfall</h2>
 <canvas id="wf"></canvas>
-<div class="muted">Newest cycle at top, one row per cycle. Brighter = stronger echo. Orange ticks = moving echoes. Red row = phone moved (history reset).</div>
+<div class="muted">Newest cycle at top, one row per cycle. Brighter = stronger echo. Orange ticks = moving echoes. Yellow row = small phone move (data joined). Red row = big move (history reset).</div>
 
 <h2>3. Moving echoes</h2>
 <div class="box" style="padding:0">
@@ -124,7 +124,7 @@
   <li><b>Period:</b> fine-distance series linearly interpolated onto a uniform time grid (step = median cycle length), slow drift removed by subtracting a least-squares quadratic trend, periodogram peak between 3/window (at least 3 full repeats must fit in the window, so with 30 s the slowest reportable period is 10 s) and the Nyquist limit. A peak sitting on that slowest edge is treated as slow drift (drift has most power at the slowest periods) and not reported; use a longer window to see slower repeats, refined by parabolic interpolation.</li>
   <li><b>Size & confidence:</b> least-squares fit of quadratic trend + fundamental + 2nd harmonic on the original (non-resampled) samples. Movement = peak-to-peak of the periodic part. Confidence = share of the detrended variance explained by that fit (R²). An echo is added to the list after 2 analyses in a row with R² ≥ 50% and spectral peak ≥ 8× the median; it stays while R² ≥ 35% and peak ≥ 5×, and is removed after 3 analyses in a row below that.</li>
   <li><b>Bad cycles:</b> a cycle is ignored entirely (not analysed, not used as reference) if its direct path is weaker than 20 dB above noise or arrives more than 2.5 ms away from the learned delay – that means noise masked the beep.</li>
-  <li><b>Phone moved:</b> compared with the average of the last 5 good cycles: echo-strength profile correlation &lt; 0.6, or direct path level change &gt; 6 dB, or ≥ 70% of the echo peaks (at least 4) jump in phase by &gt; 45°. Such cycles are skipped; if it lasts ≥ 3 cycles and ≥ 1 s, the history is cleared and the next 3 cycles are skipped.</li>
+  <li><b>Phone moved:</b> compared with the average of the last 5 good cycles: echo-strength profile correlation &lt; 0.6, or direct path level change &gt; 6 dB, or ≥ 70% of the echo peaks (at least 4) jump in phase by &gt; 45°. At the first different cycle the reference is frozen and cycles are skipped for ≥ 1 s (and ≥ 3 cycles); then, if ≥ 60% of them were different, it was a move (otherwise a false alarm and measuring resumes). <b>Small move</b> (only the phase test fired; the echo-strength profile and direct path look the same, i.e. echoes stayed in their distance slots): measurement continues; the data before and after become separate segments, each echo’s jump is fitted as one extra unknown (a step) together with its repeating pattern, and the graph shows the joined series and the fitted jumps. <b>Big move</b> (in most of those cycles: the reliable echoes changed strength by &gt; 4 dB on average, i.e. they left their distance slots, or profile correlation &lt; 0.6, or direct path change &gt; 6 dB; an average change &gt; 6 dB also starts the check by itself): the history is cleared and the next 3 cycles are skipped.</li>
   <li><b>Limits:</b> movement is only sampled once per cycle; the fastest detectable repeat is half the cycle rate (shown live). Echoes come from all directions (floor, ceiling, walls); distance is straight-line.</li>
 </ol>
 </details>
@@ -229,16 +229,18 @@ const wrapPi = a => a - TAU * Math.round(a / TAU);
 // unwrapping is ambiguous. Fits θ(t) = θ0 + a·cos(2πft) + b·sin(2πft) + g·t directly to the unit
 // phasors (wrap-free), by grid search then local refinement, and returns it if the phasors agree
 // with the model (coherence ≥ 0.8). Movement up to about ±7 rad of phase (±10 mm at 18.5 kHz).
-function modelUnwrap(ts, ur, ui) {
+function modelUnwrap(ts, ur, ui, sg) {
+  const S = sg ? Math.max(...sg) + 1 : 1; sg = sg || new Int32Array(ts.length);
   const n = ts.length; let tm = 0; for (const t of ts) tm += t; tm /= n;
   const tc = Float64Array.from(ts, t => t - tm), T = tc[n - 1] - tc[0];
   const diffs = []; for (let i = 1; i < n; i++) diffs.push(ts[i] - ts[i - 1]);
   const fmin = 1.5 / T, fmax = 0.5 / median(diffs);
   if (!(fmax > fmin)) return null;
+  const SR = new Float64Array(S), SI = new Float64Array(S);
   const coh = (f, a, b, g) => {
-    let sr = 0, si = 0; const w = TAU * f;
-    for (let i = 0; i < n; i++) { const th = a * Math.cos(w * tc[i]) + b * Math.sin(w * tc[i]) + g * tc[i], c = Math.cos(th), s = Math.sin(th); sr += ur[i] * c + ui[i] * s; si += ui[i] * c - ur[i] * s; }
-    return Math.hypot(sr, si) / n;
+    SR.fill(0); SI.fill(0); const w = TAU * f;
+    for (let i = 0; i < n; i++) { const th = a * Math.cos(w * tc[i]) + b * Math.sin(w * tc[i]) + g * tc[i], c = Math.cos(th), s = Math.sin(th); SR[sg[i]] += ur[i] * c + ui[i] * s; SI[sg[i]] += ui[i] * c - ur[i] * s; }
+    let v = 0; for (let k = 0; k < S; k++) v += Math.hypot(SR[k], SI[k]); return v / n;
   };
   const AMAX = 7, STEP = 0.5, NA = Math.round(2 * AMAX / STEP) + 1, NF = Math.min(400, Math.ceil((fmax - fmin) * T * 8) + 2);
   const Ec = new Float64Array(NA * n), Es = new Float64Array(NA * n), Fc = new Float64Array(NA * n), Fs = new Float64Array(NA * n);
@@ -253,12 +255,12 @@ function modelUnwrap(ts, ur, ui) {
       const oa = ka * n;
       // pre-multiply u by exp(-j a cos)
       for (let kb = 0; kb < NA; kb++) {
-        const ob = kb * n; let sr = 0, si = 0;
+        const ob = kb * n; SR.fill(0); SI.fill(0);
         for (let i = 0; i < n; i++) {
           const er = Ec[oa + i] * Fc[ob + i] - Es[oa + i] * Fs[ob + i], ei = Ec[oa + i] * Fs[ob + i] + Es[oa + i] * Fc[ob + i];
-          sr += ur[i] * er - ui[i] * ei; si += ur[i] * ei + ui[i] * er;
+          SR[sg[i]] += ur[i] * er - ui[i] * ei; SI[sg[i]] += ur[i] * ei + ui[i] * er;
         }
-        const c = (sr * sr + si * si);
+        let c = 0; for (let k = 0; k < S; k++) c += Math.hypot(SR[k], SI[k]);
         if (c > best.c) best = { c, f, a: -AMAX + ka * STEP, b: -AMAX + kb * STEP, g: 0 };
       }
     }
@@ -275,15 +277,17 @@ function modelUnwrap(ts, ur, ui) {
   }
   if (cur < 0.8) return { ok: false, coherence: cur };
   const w = TAU * p[0], model = Float64Array.from(tc, t => p[1] * Math.cos(w * t) + p[2] * Math.sin(w * t) + p[3] * t);
-  let sr = 0, si = 0; for (let i = 0; i < n; i++) { const c = Math.cos(model[i]), s = Math.sin(model[i]); sr += ur[i] * c + ui[i] * s; si += ui[i] * c - ur[i] * s; }
-  const th0 = Math.atan2(si, sr);
-  return { ok: true, coherence: cur, model: model.map(v => v + th0) };
+  SR.fill(0); SI.fill(0);
+  for (let i = 0; i < n; i++) { const c = Math.cos(model[i]), s = Math.sin(model[i]); SR[sg[i]] += ur[i] * c + ui[i] * s; SI[sg[i]] += ui[i] * c - ur[i] * s; }
+  return { ok: true, coherence: cur, model: model.map((v, i) => v + Math.atan2(SI[sg[i]], SR[sg[i]])) };
 }
 
 // ---- movement analysis for one candidate lag ----
 function fitCandidate(H, q, e, meanMag) {
   const n = H.length, xs = new Float64Array(n), ys = new Float64Array(n), ts = new Float64Array(n);
   const t0 = H[0].t;
+  // segments: data between small phone moves; renumber 0..S-1
+  const segIds = [...new Set(H.map(h => h.seg || 0))], sg = Int32Array.from(H, h => segIds.indexOf(h.seg || 0)), S = segIds.length;
   let mx = 0, my = 0;
   for (let i = 0; i < n; i++) { xs[i] = H[i].pr[q]; ys[i] = H[i].pi[q]; ts[i] = H[i].t - t0; mx += xs[i]; my += ys[i]; }
   mx /= n; my /= n;
@@ -294,23 +298,32 @@ function fitCandidate(H, q, e, meanMag) {
     let gap = a[0] + TAU - a[n - 1]; for (let i = 1; i < n; i++) gap = Math.max(gap, a[i] - a[i - 1]);
     return TAU - gap;
   };
-  let cx = 0, cy = 0, method = 'raw phase', arc = 0;
-  const cf = circleFit(xs, ys);
-  // radial spread about a centre: small when the phasors lie on a circle around it
-  const spread = (cx, cy) => { let m = 0, m2 = 0; for (let i = 0; i < n; i++) { const r = Math.hypot(xs[i] - cx, ys[i] - cy); m += r; m2 += r * r; } m /= n; return Math.sqrt(Math.max(0, m2 / n - m * m)); };
-  if (cf && cf.r < 10 * maxDev) {
-    const a = coverage(cf.cx, cf.cy);
-    if (a >= Math.PI / 3 && spread(cf.cx, cf.cy) < 0.5 * spread(0, 0)) { cx = cf.cx; cy = cf.cy; method = 'circle fit'; arc = a; }
+  // static-clutter centre, chosen per segment (a phone move changes the clutter phasor too)
+  const spread = (ix, cx, cy) => { let m = 0, m2 = 0; for (const i of ix) { const r = Math.hypot(xs[i] - cx, ys[i] - cy); m += r; m2 += r * r; } m /= ix.length; return Math.sqrt(Math.max(0, m2 / ix.length - m * m)); };
+  const cov = (ix, cx, cy) => { const a = ix.map(i => Math.atan2(ys[i] - cy, xs[i] - cx)).sort((p, q) => p - q); let gap = a[0] + TAU - a[a.length - 1]; for (let i = 1; i < a.length; i++) gap = Math.max(gap, a[i] - a[i - 1]); return TAU - gap; };
+  const CX = new Float64Array(S), CY = new Float64Array(S); let nCircle = 0, arc = 0;
+  for (let k = 0; k < S; k++) {
+    const ix = []; for (let i = 0; i < n; i++) if (sg[i] === k) ix.push(i);
+    let used = false;
+    if (ix.length >= 12) {
+      let mx2 = 0, my2 = 0; for (const i of ix) { mx2 += xs[i]; my2 += ys[i]; } mx2 /= ix.length; my2 /= ix.length;
+      let md = 0; for (const i of ix) md = Math.max(md, Math.hypot(xs[i] - mx2, ys[i] - my2));
+      const cf = circleFit(ix.map(i => xs[i]), ix.map(i => ys[i]));
+      if (cf && cf.r < 10 * md) { const a = cov(ix, cf.cx, cf.cy); if (a >= Math.PI / 3 && spread(ix, cf.cx, cf.cy) < 0.5 * spread(ix, 0, 0)) { CX[k] = cf.cx; CY[k] = cf.cy; nCircle++; used = true; arc = Math.max(arc, a); } }
+    }
+    if (!used) arc = Math.max(arc, cov(ix, 0, 0));
   }
-  if (method !== 'circle fit') arc = coverage(0, 0);
-  const thw = Float64Array.from(xs, (v, i) => Math.atan2(ys[i] - cy, v - cx));
-  let th = unwrap(thw);
-  let big = 0; for (let i = 1; i < n; i++) if (Math.abs(wrapPi(thw[i] - thw[i - 1])) > Math.PI / 2) big++;
+  const method = nCircle === 0 ? 'raw phase' : nCircle === S ? 'circle fit' : `circle fit (${nCircle}/${S} segments)`;
+  const thw = Float64Array.from(xs, (v, i) => Math.atan2(ys[i] - CY[sg[i]], v - CX[sg[i]]));
+  // unwrap within each segment only (the jump at a phone move is fitted later as a step)
+  let th = new Float64Array(n);
+  { let off = 0; for (let i = 0; i < n; i++) { if (i && sg[i] === sg[i - 1]) { const dd = thw[i] - thw[i - 1]; if (dd > Math.PI) off -= TAU; else if (dd < -Math.PI) off += TAU; } else off = 0; th[i] = thw[i] + off; } }
+  let big = 0; for (let i = 1; i < n; i++) if (sg[i] === sg[i - 1] && Math.abs(wrapPi(thw[i] - thw[i - 1])) > Math.PI / 2) big++;
   let unwrapNote = 'plain';
   if (big > 0.1 * (n - 1)) {
     const ur = new Float64Array(n), ui = new Float64Array(n);
     for (let i = 0; i < n; i++) { ur[i] = Math.cos(thw[i]); ui[i] = Math.sin(thw[i]); }
-    const mu = modelUnwrap(ts, ur, ui);
+    const mu = modelUnwrap(ts, ur, ui, sg);
     if (mu && mu.ok) { th = Float64Array.from(thw, (v, i) => mu.model[i] + wrapPi(v - mu.model[i])); unwrapNote = 'model-guided'; }
     else unwrapNote = 'ambiguous';
   }
@@ -327,10 +340,13 @@ function fitCandidate(H, q, e, meanMag) {
   // uniform resampling (linear interpolation), step = median cycle interval
   const diffs = []; for (let i = 1; i < n; i++) diffs.push(ts[i] - ts[i - 1]);
   const dt = median(diffs), T = ts[n - 1];
+  // for the spectrum only: remove each segment's mean so the jump at a move doesn't dominate
+  const sm = new Float64Array(S), sc = new Float64Array(S); for (let i = 0; i < n; i++) { sm[sg[i]] += d[i]; sc[sg[i]]++; }
+  const dz = Float64Array.from(d, (v, i) => v - sm[sg[i]] / sc[sg[i]]);
   const Ng = Math.floor(T / dt) + 1, g = new Float64Array(Ng);
   for (let j = 0, i = 0; j < Ng; j++) {
     const t = j * dt; while (i < n - 2 && ts[i + 1] < t) i++;
-    const f = (t - ts[i]) / (ts[i + 1] - ts[i]); g[j] = d[i] + Math.max(0, Math.min(1, f)) * (d[i + 1] - d[i]);
+    const f = (t - ts[i]) / (ts[i + 1] - ts[i]); g[j] = dz[i] + Math.max(0, Math.min(1, f)) * (dz[i + 1] - dz[i]);
   }
   // remove slow drift: least-squares quadratic trend
   { const jj = Float64Array.from(g, (_, j) => j / Ng), c = lstsq([new Float64Array(Ng).fill(1), jj, jj.map(v => v * v)], g);
@@ -352,13 +368,14 @@ function fitCandidate(H, q, e, meanMag) {
 
   // least squares on original samples: line + fundamental + 2nd harmonic
   const one = new Float64Array(n).fill(1), w = TAU * fBest, tq = ts.map(t => (t / T) * (t / T));
-  const cols = [one, ts, ts.map(t => Math.cos(w * t)), ts.map(t => Math.sin(w * t)), ts.map(t => Math.cos(2 * w * t)), ts.map(t => Math.sin(2 * w * t)), tq];
-  const cLin = lstsq([one, ts, tq], d), cAll = lstsq(cols, d);
+  const steps = []; for (let k = 1; k < S; k++) steps.push(Float64Array.from(sg, v => v === k ? 1 : 0));   // one jump per small phone move
+  const cols = [one, ts, ts.map(t => Math.cos(w * t)), ts.map(t => Math.sin(w * t)), ts.map(t => Math.cos(2 * w * t)), ts.map(t => Math.sin(2 * w * t)), tq, ...steps];
+  const cLin = lstsq([one, ts, tq, ...steps], d), cAll = lstsq(cols, d);
   if (!cLin || !cAll) return Object.assign(base, { note: 'fit failed' });
   let ssLin = 0, ssRes = 0;
   for (let i = 0; i < n; i++) {
-    const rl = d[i] - cLin[0] - cLin[1] * ts[i] - cLin[2] * tq[i]; ssLin += rl * rl;
-    let m = 0; for (let c = 0; c < 7; c++) m += cAll[c] * cols[c][i]; ssRes += (d[i] - m) * (d[i] - m);
+    let rl = d[i] - cLin[0] - cLin[1] * ts[i] - cLin[2] * tq[i]; for (let k = 1; k < S; k++) rl -= cLin[2 + k] * steps[k - 1][i]; ssLin += rl * rl;
+    let m = 0; for (let c = 0; c < cols.length; c++) m += cAll[c] * cols[c][i]; ssRes += (d[i] - m) * (d[i] - m);
   }
   const R2 = ssLin > 0 ? Math.max(0, 1 - ssRes / ssLin) : 0;
   let lo = Infinity, hi = -Infinity;
@@ -373,18 +390,22 @@ function fitCandidate(H, q, e, meanMag) {
     conf: R2, pratio, edge: mb <= 1,
     moving: R2 >= 0.5 && pratio >= 8 && unwrapNote !== 'ambiguous' && mb > 1,
     keep: R2 >= 0.35 && pratio >= 5 && unwrapNote !== 'ambiguous' && mb > 1,
-    series: { t: ts, d, t0Abs: t0 }, coef: cAll
+    stepsMm: cAll.slice(7), segments: S,
+    series: { t: ts, d: Float64Array.from(d, (v, i) => sg[i] ? v - cAll[6 + sg[i]] : v), seg: sg, t0Abs: t0 }, coef: cAll.slice(0, 7)
   });
 }
 
 function analyzeMovement(H, e) {
+  { const cnt = {}; for (const h of H) cnt[h.seg || 0] = (cnt[h.seg || 0] || 0) + 1; H = H.filter(h => cnt[h.seg || 0] >= 4); }
   const n = H.length;
   const T = n > 1 ? H[n - 1].t - H[0].t : 0;
   if (n < 12 || T < 10) return { status: 'collecting', n, T, items: [], moving: [] };
   const K = e.K, mr = new Float64Array(K), mi = new Float64Array(K), mm = new Float64Array(K), D = new Float64Array(K);
   for (const h of H) for (let q = 0; q < K; q++) { mr[q] += h.pr[q]; mi[q] += h.pi[q]; mm[q] += h.mag[q]; }
   for (let q = 0; q < K; q++) { mr[q] /= n; mi[q] /= n; mm[q] /= n; }
-  for (const h of H) for (let q = 0; q < K; q++) { const a = h.pr[q] - mr[q], b = h.pi[q] - mi[q]; D[q] += a * a + b * b; }
+  const segs = [...new Set(H.map(h => h.seg || 0))], SM = {};
+  for (const sid of segs) { const r = new Float64Array(K), i2 = new Float64Array(K); let c = 0; for (const h of H) if ((h.seg || 0) === sid) { c++; for (let q = 0; q < K; q++) { r[q] += h.pr[q]; i2[q] += h.pi[q]; } } for (let q = 0; q < K; q++) { r[q] /= c; i2[q] /= c; } SM[sid] = [r, i2]; }
+  for (const h of H) { const [r, i2] = SM[h.seg || 0]; for (let q = 0; q < K; q++) { const a = h.pr[q] - r[q], b = h.pi[q] - i2[q]; D[q] += a * a + b * b; } }
   for (let q = 0; q < K; q++) D[q] = Math.sqrt(D[q] / n);
   const med = median(D);
   const peaks = [];
@@ -595,28 +616,46 @@ class Engine {
       // phase test: a moved phone changes the phase of (almost) every echo at once; breathing moves only one
       const refR = new Float64Array(K), refI = new Float64Array(K);
       for (const h of this.refC) for (let q = 0; q < K; q++) { refR[q] += h[0][q]; refI[q] += h[1][q]; }
-      let nPk = 0, nJump = 0;
+      let nPk = 0, nJump = 0, nMag = 0, sumDb = 0;
       for (let q = 1; q < K - 1; q++) if (ref[q] > 6 * nRel && ref[q] > ref[q - 1] && ref[q] >= ref[q + 1]) {
         nPk++; const dph = Math.atan2(pi[q] * refR[q] - pr[q] * refI[q], pr[q] * refR[q] + pi[q] * refI[q]);
         if (Math.abs(dph) > Math.PI / 4) nJump++;
+        const ddb = Math.abs(20 * Math.log10((mag[q] + 1e-12) / ref[q])); sumDb += ddb;
+        if (ddb > 6) nMag++;   // echo left its distance slot
       }
+      res.magChangeFrac = nPk >= 3 ? nMag / nPk : 0; res.magChangeDb = nPk ? sumDb / nPk : 0;
       res.profileCorr = corr; res.directChangeDb = dA; res.phaseJumpFrac = nPk >= 3 ? nJump / nPk : 0; res.nPeaks = nPk;
       if (corr < 0.6 || Math.abs(dA) > 6 || (nPk >= 3 && nJump >= 0.7 * nPk)) shift = true;
+      res.bigChange = corr < 0.6 || Math.abs(dA) > 6 || (nPk >= 3 && res.magChangeDb > 4);
+      if (nPk >= 3 && res.magChangeDb > 6) shift = true;
     }
-    if (shift && !this.suspect) this.suspectT = res.t;
-    if (shift && (++this.suspect < 3 || res.t - this.suspectT < 1.0)) {
-      res.skipped = true; res.warn.push('cycle unlike the previous ones – skipped');
-    } else if (shift) {
-      res.shift = true; res.warn.push('phone moved/touched – history reset'); this.suspect = 0;
+    // Suspicion: freeze the reference at the first different cycle, skip cycles for ≥ 1 s, then decide by majority.
+    let decided = null;
+    if (!this.susp && shift) this.susp = { t0: res.t, n: 0, fail: 0, big: 0 };
+    if (this.susp) {
+      const S = this.susp; S.n++; if (shift) S.fail++; if (shift && res.bigChange) S.big++;
+      if (res.t - S.t0 >= 1.0 && S.n >= 3) { decided = S.fail >= 0.6 * S.n ? (S.big >= 0.5 * S.fail ? 'big' : 'small') : 'none'; this.susp = null; }
+      else { res.skipped = true; res.warn.push('cycle unlike the previous ones – checking (skipped)'); }
+    }
+    if (this.susp) {
+      // still deciding: nothing else to do for this cycle
+    } else if (decided === 'small') {
+      // small move: the profile looks the same, only the fine distances jumped – keep the history and
+      // start a new segment; each echo's jump is fitted as a step in the movement analysis
+      res.join = true; res.skipped = true; res.warn.push('phone moved slightly – measurement continues, data joined across the move');
+      this.seg = (this.seg || 0) + 1; this.refMags = []; this.refA0 = []; this.refC = []; this.settle = 3;
+    } else if (decided === 'big') {
+      res.shift = true; res.skipped = true; res.warn.push('phone moved/touched – history reset');
       this.hist = []; this.refMags = []; this.refA0 = []; this.refC = []; this.tracked = []; this.settle = 3;
       this.analysis = { status: 'paused', items: [], moving: [] };
+    } else if (decided === 'none') {
+      res.skipped = true; res.warn.push('false alarm – resumed');
     } else {
-      this.suspect = 0;
       this.refMags.push(mag); this.refA0.push(A0); this.refC.push([pr, pi]);
       if (this.refMags.length > 5) { this.refMags.shift(); this.refA0.shift(); this.refC.shift(); }
       if (this.settle > 0) { this.settle--; res.settling = true; }
       else {
-        this.hist.push({ t: res.t, pr, pi, mag });
+        this.hist.push({ t: res.t, pr, pi, mag, seg: this.seg || 0 });
         while (this.hist.length && this.hist[0].t < res.t - this.windowS) this.hist.shift();
         if (res.t - this.lastAnaT >= 1 || this.analysis.status !== 'ok') { this.analysis = this._stabilise(analyzeMovement(this.hist, this)); this.lastAnaT = res.t; }
       }
@@ -729,7 +768,7 @@ function stop() {
 function onCycle(res) {
   lastRes = res;
   log.push({ i: res.index, F: res.F, lat: res.latencyMs, micPeak: res.micPeak, micRms: res.micRms, t: res.t, len: res.len, listen: res.listenS, snr: res.snrDb, reason: res.reason,
-    shift: !!res.shift, skipped: !!res.skipped,
+    shift: !!res.shift, join: !!res.join, skipped: !!res.skipped,
     mov: res.analysis ? (res.analysis.moving || []).map(m => `${m.distCm.toFixed(1)}:${m.ppMm.toFixed(2)}:${m.periodS.toFixed(2)}:${(100 * m.conf).toFixed(0)}`).join(' ') : '', echoes: res.echoes || [], warn: res.warn.slice() });
   if (log.length > 50000) log.shift();
   if (res.ok) wfRow(res);
@@ -856,7 +895,7 @@ function wfRow(r) {
   let mx = 0; for (let q = 0; q < eng.K; q++) mx = Math.max(mx, r.mag[q]);
   for (let q = 0; q < eng.K; q++) {
     const db = 20 * Math.log10(r.mag[q] / mx + 1e-12), v = Math.round(255 * Math.max(0, Math.min(1, (db + 45) / 45)));
-    for (let row = 0; row < 2; row++) { const o = 4 * (row * eng.K + q); if (r.shift) { img.data[o] = 200; img.data[o + 1] = 0; img.data[o + 2] = 0; } else { img.data[o] = img.data[o + 1] = img.data[o + 2] = v; } img.data[o + 3] = 255; }
+    for (let row = 0; row < 2; row++) { const o = 4 * (row * eng.K + q); if (r.shift) { img.data[o] = 200; img.data[o + 1] = 0; img.data[o + 2] = 0; } else if (r.join) { img.data[o] = 230; img.data[o + 1] = 170; img.data[o + 2] = 0; } else { img.data[o] = img.data[o + 1] = img.data[o + 2] = v; } img.data[o + 3] = 255; }
   }
   g.putImageData(img, 0, 0);
 }
@@ -872,15 +911,19 @@ function drawWF() {
   for (const m of eng.analysis.moving || []) { const x = x0 + (m.distCm - d0) / (d1 - d0) * (x1 - x0); g.beginPath(); g.moveTo(x - 5, 0); g.lineTo(x + 5, 0); g.lineTo(x, top); g.fill(); }
 }
 
+// one tap handler on the table body, so taps work even though rows are redrawn every cycle
+$('movBody').addEventListener('click', ev => { const tr = ev.target.closest('tr[data-d]'); if (!tr) return; selDist = +tr.dataset.d; drawList(); drawDetail(); });
+let lastListHtml = '';
 function drawList() {
   const a = eng ? eng.analysis : null, body = $('movBody');
   const mv = a ? a.moving : [];
   if (!mv.length) {
-    body.innerHTML = `<tr><td colspan="5" class="muted">${!a ? '–' : a.status === 'collecting' ? 'collecting data…' : a.status === 'paused' ? 'paused – phone moved' : 'none found'}</td></tr>`;
+    lastListHtml = ''; body.innerHTML = `<tr><td colspan="5" class="muted">${!a ? '–' : a.status === 'collecting' ? 'collecting data…' : a.status === 'paused' ? 'paused – phone moved' : 'none found'}</td></tr>`;
   } else {
     if (selDist === null || !mv.some(m => Math.abs(m.distCm - selDist) < 5)) selDist = mv[0].distCm;
-    body.innerHTML = mv.map(m => `<tr data-d="${m.distCm}" class="${Math.abs(m.distCm - selDist) < 5 ? 'sel' : ''}"><td>${m.distCm.toFixed(1)} cm</td><td>${m.ppMm.toFixed(2)} mm</td><td>${m.periodS.toFixed(2)} s<br><span class="muted">${m.periodCycles.toFixed(1)} cyc</span></td><td>${m.perMin.toFixed(1)}</td><td>${(100 * m.conf).toFixed(0)}%</td></tr>`).join('');
-    for (const tr of body.querySelectorAll('tr')) tr.onclick = () => { selDist = +tr.dataset.d; drawList(); drawDetail(); };
+    const html = mv.map(m => `<tr data-d="${m.distCm}" class="${Math.abs(m.distCm - selDist) < 5 ? 'sel' : ''}"><td>${m.distCm.toFixed(1)} cm</td><td>${m.ppMm.toFixed(2)} mm</td><td>${m.periodS.toFixed(2)} s<br><span class="muted">${m.periodCycles.toFixed(1)} cyc</span></td><td>${m.perMin.toFixed(1)}</td><td>${(100 * m.conf).toFixed(0)}%</td></tr>`).join('');
+    if (html !== lastListHtml) { body.innerHTML = html; lastListHtml = html; }
+
   }
   const rejected = a && a.items ? a.items.filter(i => !i.moving) : [];
   $('movInfo').textContent = rejected.length ? 'Checked but not repeating: ' + rejected.map(i => `${i.distCm.toFixed(0)} cm (${i.conf !== undefined ? (100 * i.conf).toFixed(0) + '%' + (i.edge ? ' drift' : '') : i.note || '-'})`).join(', ') : '';
@@ -905,8 +948,9 @@ function drawDetail() {
   g.strokeStyle = '#1f5fbf'; g.lineWidth = 1; g.beginPath();
   for (let i = 0; i < n; i++) { const x = X(t[i]), y = Y(det[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke();
   g.fillStyle = '#1f5fbf'; for (let i = 0; i < n; i++) { g.beginPath(); g.arc(X(t[i]), Y(det[i]), 2, 0, 7); g.fill(); }
+  const joins = m.segments > 1 ? ` Joined across ${m.segments - 1} small phone move(s); fitted jump(s): ${m.stepsMm.map(v => (v >= 0 ? '+' : '') + v.toFixed(2) + ' mm').join(', ')}.` : '';
   $('detailInfo').textContent = `Echo at ${m.distCm.toFixed(1)} cm · fine distance in mm (+ = farther), slow curved trend removed. ` +
-    `Blue = one point per cycle, orange = fitted repeating pattern. Phase: ${m.method}, unwrapping: ${m.unwrap} (arc ${m.arcDeg.toFixed(0)}°).`;
+    `Blue = one point per cycle, orange = fitted repeating pattern. Phase: ${m.method}, unwrapping: ${m.unwrap} (arc ${m.arcDeg.toFixed(0)}°).` + joins;
 }
 
 $('csvBtn').onclick = () => {
@@ -916,8 +960,8 @@ $('csvBtn').onclick = () => {
   if (eng) L.push(`# band_hz ${eng.f0}-${eng.f1}; fs ${eng.fs}; c 343; max_range_m ${eng.maxRange}; gap_cm ${eng.gap * 100}; window_s ${eng.windowS}; range_res_cm ${(eng.rangeRes * 100).toFixed(2)}; wavelength_mm ${(eng.lambda * 1000).toFixed(3)}`);
   if (trackSettings) L.push('# mic_settings_applied ' + JSON.stringify(trackSettings).replace(/,/g, ';'));
   if (ctxInfo) L.push('# audio ' + JSON.stringify(ctxInfo).replace(/,/g, ';'));
-  L.push('cycle,beep_time_s,beep_frame,cycle_len_s,listen_s,end_reason,latency_ms,direct_snr_db,mic_peak_dbfs,mic_rms_dbfs,phone_moved,skipped,warnings,moving_shown(dist_cm:pp_mm:period_s:conf%),echoes(dist_cm:strength_db:fine_mm)');
-  for (const r of log) L.push([r.i, r.t.toFixed(5), r.F, r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.lat !== undefined ? r.lat.toFixed(3) : '', r.snr !== undefined ? r.snr.toFixed(1) : '', dB(r.micPeak), dB(r.micRms), r.shift ? 1 : 0, r.skipped ? 1 : 0,
+  L.push('cycle,beep_time_s,beep_frame,cycle_len_s,listen_s,end_reason,latency_ms,direct_snr_db,mic_peak_dbfs,mic_rms_dbfs,phone_moved(1=reset 2=joined),skipped,warnings,moving_shown(dist_cm:pp_mm:period_s:conf%),echoes(dist_cm:strength_db:fine_mm)');
+  for (const r of log) L.push([r.i, r.t.toFixed(5), r.F, r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.lat !== undefined ? r.lat.toFixed(3) : '', r.snr !== undefined ? r.snr.toFixed(1) : '', dB(r.micPeak), dB(r.micRms), r.shift ? 1 : r.join ? 2 : 0, r.skipped ? 1 : 0,
     '"' + r.warn.join('; ') + '"', r.mov || '', r.echoes.map(e => `${e.distCm.toFixed(2)}:${e.db.toFixed(1)}:${e.fineMm.toFixed(3)}`).join(' ')].join(','));
   const mv = eng ? eng.analysis.moving || [] : [];
   L.push(''); L.push('# moving echoes (at export)');
