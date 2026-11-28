@@ -124,7 +124,8 @@
   <li><b>Period:</b> fine-distance series linearly interpolated onto a uniform time grid (step = median cycle length), slow drift removed by subtracting a least-squares quadratic trend, periodogram peak between 3/window (at least 3 full repeats must fit in the window, so with 30 s the slowest reportable period is 10 s) and the Nyquist limit. A peak sitting on that slowest edge is treated as slow drift (drift has most power at the slowest periods) and not reported; use a longer window to see slower repeats, refined by parabolic interpolation.</li>
   <li><b>Size & confidence:</b> least-squares fit of quadratic trend + fundamental + 2nd harmonic on the original (non-resampled) samples. Movement = peak-to-peak of the periodic part. Confidence = share of the detrended variance explained by that fit (R²). An echo is added to the list after 2 analyses in a row with R² ≥ 50% and spectral peak ≥ 8× the median; it stays while R² ≥ 35% and peak ≥ 5×, and is removed after 3 analyses in a row below that.</li>
   <li><b>Bad cycles:</b> a cycle is ignored entirely (not analysed, not used as reference) if its direct path is weaker than 20 dB above noise or arrives more than 2.5 ms away from the learned delay – that means noise masked the beep.</li>
-  <li><b>Phone moved:</b> compared with the average of the last 5 good cycles: echo-strength profile correlation &lt; 0.6, or direct path level change &gt; 6 dB, or ≥ 70% of the echo peaks (at least 4) jump in phase by &gt; 45°. At the first different cycle the reference is frozen and cycles are skipped for ≥ 1 s (and ≥ 3 cycles); then, if ≥ 60% of them were different, it was a move (otherwise a false alarm and measuring resumes). <b>Small move</b> (only the phase test fired; the echo-strength profile and direct path look the same, i.e. echoes stayed in their distance slots): measurement continues; the data before and after become separate segments, each echo’s jump is fitted as one extra unknown (a step) together with its repeating pattern, and the graph shows the joined series and the fitted jumps. <b>Big move</b> (in most of those cycles: the reliable echoes changed strength by &gt; 4 dB on average, i.e. they left their distance slots, or profile correlation &lt; 0.6, or direct path change &gt; 6 dB; an average change &gt; 6 dB also starts the check by itself): the history is cleared and the next 3 cycles are skipped.</li>
+  <li><b>Motion sensors:</b> if the phone reports accelerometer/gyroscope data, they decide whether the phone is moving (rotation &gt; 2.5 °/s or acceleration without gravity &gt; 0.25 m/s²; logged per cycle in the CSV). They are not used to compute how far each echo shifted: phone sensors cannot give millimetre displacement, and the echo directions are unknown. While the phone moves, cycles are skipped; when it is still again, each echo’s jump is fitted from its own data (join), and the history is reset only if the echoes left their distance slots or the phone rotated &gt; 10°. If the echoes change while the sensors say the phone is still, the room changed (e.g. someone came closer): the data is joined and the history is never reset. Without sensors, the echo-only rules below apply.</li>
+  <li><b>Phone moved (echo-only):</b> compared with the average of the last 5 good cycles: echo-strength profile correlation &lt; 0.6, or direct path level change &gt; 6 dB, or ≥ 70% of the echo peaks (at least 4) jump in phase by &gt; 45°. At the first different cycle the reference is frozen and cycles are skipped for ≥ 1 s (and ≥ 3 cycles); then, if ≥ 60% of them were different, it was a move (otherwise a false alarm and measuring resumes). <b>Small move</b> (only the phase test fired; the echo-strength profile and direct path look the same, i.e. echoes stayed in their distance slots): measurement continues; the data before and after become separate segments, each echo’s jump is fitted as one extra unknown (a step) together with its repeating pattern, and the graph shows the joined series and the fitted jumps. <b>Big move</b> (in most of those cycles: the reliable echoes changed strength by &gt; 4 dB on average, i.e. they left their distance slots, or profile correlation &lt; 0.6, or direct path change &gt; 6 dB; an average change &gt; 6 dB also starts the check by itself): the history is cleared and the next 3 cycles are skipped.</li>
   <li><b>Limits:</b> movement is only sampled once per cycle; the fastest detectable repeat is half the cycle rate (shown live). Echoes come from all directions (floor, ceiling, walls); distance is straight-line.</li>
 </ol>
 </details>
@@ -533,6 +534,33 @@ class Engine {
     if (this.onCycle) this.onCycle(res);
   }
 
+  // Compare this cycle with the average of the last 5 good cycles (null until 3 exist).
+  _compare(pr, pi, mag, A0, nRel) {
+    if (this.refMags.length < 3) return null;
+    const K = this.K, ref = new Float64Array(K); for (const m of this.refMags) for (let q = 0; q < K; q++) ref[q] += m[q] / this.refMags.length;
+    const idxs = []; for (let q = 0; q < K; q++) if (ref[q] > 4 * nRel) idxs.push(q);
+    const refA = this.refA0.reduce((s, v) => s + v, 0) / this.refA0.length, dA = 20 * Math.log10(A0 / refA);
+    let corr = 1;
+    if (idxs.length >= 8) {
+      let ma = 0, mb = 0; for (const q of idxs) { ma += ref[q]; mb += mag[q]; } ma /= idxs.length; mb /= idxs.length;
+      let sab = 0, saa = 0, sbb = 0; for (const q of idxs) { const u = ref[q] - ma, v = mag[q] - mb; sab += u * v; saa += u * u; sbb += v * v; }
+      corr = sab / Math.sqrt(saa * sbb + 1e-30);
+    }
+    // a moved phone changes the phase of (almost) every reliable echo at once; breathing moves only one
+    const refR = new Float64Array(K), refI = new Float64Array(K);
+    for (const h of this.refC) for (let q = 0; q < K; q++) { refR[q] += h[0][q]; refI[q] += h[1][q]; }
+    let nPk = 0, nJump = 0, sumDb = 0;
+    for (let q = 1; q < K - 1; q++) if (ref[q] > 6 * nRel && ref[q] > ref[q - 1] && ref[q] >= ref[q + 1]) {
+      nPk++; const dph = Math.atan2(pi[q] * refR[q] - pr[q] * refI[q], pr[q] * refR[q] + pi[q] * refI[q]);
+      if (Math.abs(dph) > Math.PI / 4) nJump++;
+      sumDb += Math.abs(20 * Math.log10((mag[q] + 1e-12) / ref[q]));
+    }
+    const magDb = nPk ? sumDb / nPk : 0;
+    const big = corr < 0.6 || Math.abs(dA) > 6 || (nPk >= 3 && magDb > 4);
+    const shift = corr < 0.6 || Math.abs(dA) > 6 || (nPk >= 3 && nJump >= 0.7 * nPk) || (nPk >= 3 && magDb > 6);
+    return { shift, big, info: { profileCorr: corr, directChangeDb: dA, phaseJumpFrac: nPk >= 3 ? nJump / nPk : 0, nPeaks: nPk, magChangeDb: magDb, bigChange: big } };
+  }
+
   // Show an echo only after 2 analyses in a row call it moving; keep it while it stays above a looser bar
   // (confidence ≥ 35%, peak ratio ≥ 5) and drop it after 3 analyses in a row below that.
   _stabilise(a) {
@@ -600,52 +628,45 @@ class Engine {
       res.skipped = true; res.bad = true; res.warn.push('bad cycle (beep masked by noise) – ignored');
       res.analysis = this.analysis; return;
     }
-    // phone moved?
-    let shift = false;
-    if (this.refMags.length >= 3) {
-      const ref = new Float64Array(K); for (const m of this.refMags) for (let q = 0; q < K; q++) ref[q] += m[q] / this.refMags.length;
-      const idxs = []; for (let q = 0; q < K; q++) if (ref[q] > 4 * nRel) idxs.push(q);
-      const refA = this.refA0.reduce((s, v) => s + v, 0) / this.refA0.length;
-      const dA = 20 * Math.log10(A0 / refA);
-      let corr = 1;
-      if (idxs.length >= 8) {
-        let ma = 0, mb = 0; for (const q of idxs) { ma += ref[q]; mb += mag[q]; } ma /= idxs.length; mb /= idxs.length;
-        let sab = 0, saa = 0, sbb = 0; for (const q of idxs) { const u = ref[q] - ma, v = mag[q] - mb; sab += u * v; saa += u * u; sbb += v * v; }
-        corr = sab / Math.sqrt(saa * sbb + 1e-30);
-      }
-      // phase test: a moved phone changes the phase of (almost) every echo at once; breathing moves only one
-      const refR = new Float64Array(K), refI = new Float64Array(K);
-      for (const h of this.refC) for (let q = 0; q < K; q++) { refR[q] += h[0][q]; refI[q] += h[1][q]; }
-      let nPk = 0, nJump = 0, nMag = 0, sumDb = 0;
-      for (let q = 1; q < K - 1; q++) if (ref[q] > 6 * nRel && ref[q] > ref[q - 1] && ref[q] >= ref[q + 1]) {
-        nPk++; const dph = Math.atan2(pi[q] * refR[q] - pr[q] * refI[q], pr[q] * refR[q] + pi[q] * refI[q]);
-        if (Math.abs(dph) > Math.PI / 4) nJump++;
-        const ddb = Math.abs(20 * Math.log10((mag[q] + 1e-12) / ref[q])); sumDb += ddb;
-        if (ddb > 6) nMag++;   // echo left its distance slot
-      }
-      res.magChangeFrac = nPk >= 3 ? nMag / nPk : 0; res.magChangeDb = nPk ? sumDb / nPk : 0;
-      res.profileCorr = corr; res.directChangeDb = dA; res.phaseJumpFrac = nPk >= 3 ? nJump / nPk : 0; res.nPeaks = nPk;
-      if (corr < 0.6 || Math.abs(dA) > 6 || (nPk >= 3 && nJump >= 0.7 * nPk)) shift = true;
-      res.bigChange = corr < 0.6 || Math.abs(dA) > 6 || (nPk >= 3 && res.magChangeDb > 4);
-      if (nPk >= 3 && res.magChangeDb > 6) shift = true;
+    // ---- did the phone move, or did the room change? ----
+    const cmp = this._compare(pr, pi, mag, A0, nRel);
+    if (cmp) Object.assign(res, cmp.info);
+    let shift = cmp ? cmp.shift : false;
+    const mq = this.motionQuery ? this.motionQuery() : null, sensors = !!(mq && mq.avail);
+    res.motion = mq; res.sensors = sensors;
+    let decided = null, why = '';
+    if (sensors && mq.moving) {
+      // the phone itself is moving (motion sensors): freeze the reference and skip until it is still again
+      if (!this.pmove) this.pmove = { t0: res.t, rot: 0 };
+      this.pmove.rot = Math.max(this.pmove.rot, mq.rotDeg || 0);
+      this.susp = null; res.skipped = true; res.warn.push('phone moving (motion sensor) – skipped');
+      res.analysis = this.analysis; return;
     }
-    // Suspicion: freeze the reference at the first different cycle, skip cycles for ≥ 1 s, then decide by majority.
-    let decided = null;
-    if (!this.susp && shift) this.susp = { t0: res.t, n: 0, fail: 0, big: 0 };
-    if (this.susp) {
-      const S = this.susp; S.n++; if (shift) S.fail++; if (shift && res.bigChange) S.big++;
-      if (res.t - S.t0 >= 1.0 && S.n >= 3) { decided = S.fail >= 0.6 * S.n ? (S.big >= 0.5 * S.fail ? 'big' : 'small') : 'none'; this.susp = null; }
-      else { res.skipped = true; res.warn.push('cycle unlike the previous ones – checking (skipped)'); }
+    if (sensors && this.pmove) {
+      // phone has just stopped: join, unless the echoes left their distance slots or it was rotated a lot
+      const big = (cmp && cmp.big) || this.pmove.rot > 10;
+      decided = big ? 'big' : 'small'; why = big ? (this.pmove.rot > 10 ? `rotated ${this.pmove.rot.toFixed(0)}°` : 'echoes left their distance slots') : 'small move';
+      this.pmove = null; this.susp = null;
+    } else {
+      // Suspicion: freeze the reference at the first different cycle, skip cycles for ≥ 1 s, then decide by majority.
+      if (!this.susp && shift) this.susp = { t0: res.t, n: 0, fail: 0, big: 0 };
+      if (this.susp) {
+        const S = this.susp; S.n++; if (shift) S.fail++; if (shift && cmp && cmp.big) S.big++;
+        if (res.t - S.t0 >= 1.0 && S.n >= 3) { decided = S.fail >= 0.6 * S.n ? (S.big >= 0.5 * S.fail ? 'big' : 'small') : 'none'; this.susp = null; }
+        else { res.skipped = true; res.warn.push('cycle unlike the previous ones – checking (skipped)'); }
+      }
+      // with motion sensors present and quiet, the phone did not move: it is the room that changed – never reset
+      if (sensors && (decided === 'big' || decided === 'small')) { decided = 'scene'; }
     }
     if (this.susp) {
       // still deciding: nothing else to do for this cycle
-    } else if (decided === 'small') {
-      // small move: the profile looks the same, only the fine distances jumped – keep the history and
-      // start a new segment; each echo's jump is fitted as a step in the movement analysis
-      res.join = true; res.skipped = true; res.warn.push('phone moved slightly – measurement continues, data joined across the move');
-      this.seg = (this.seg || 0) + 1; this.refMags = []; this.refA0 = []; this.refC = []; this.settle = 3;
+    } else if (decided === 'small' || decided === 'scene') {
+      // keep the history and start a new segment; each echo's jump is fitted as a step in the movement analysis
+      res.join = true; res.skipped = true;
+      res.warn.push(decided === 'scene' ? 'room changed (phone still per motion sensor) – data joined, measuring continues' : 'phone moved slightly – data joined across the move, measuring continues');
+      this.seg = (this.seg || 0) + 1; this.refMags = []; this.refA0 = []; this.refC = []; this.settle = decided === 'scene' ? 1 : 3;
     } else if (decided === 'big') {
-      res.shift = true; res.skipped = true; res.warn.push('phone moved/touched – history reset');
+      res.shift = true; res.skipped = true; res.warn.push('phone moved (' + (why || 'echoes left their distance slots') + ') – history reset');
       this.hist = []; this.refMags = []; this.refA0 = []; this.refC = []; this.tracked = []; this.settle = 3;
       this.analysis = { status: 'paused', items: [], moving: [] };
     } else if (decided === 'none') {
@@ -688,6 +709,35 @@ class Rec extends AudioWorkletProcessor {
 registerProcessor('sonar-rec', Rec);`;
 
 let ctx = null, stream = null, eng = null, outGain = null, wakeLock = null, running = false;
+// ---- motion sensors (accelerometer + gyroscope): used only to know WHETHER the phone is moving ----
+const ROT_T = 2.5, ACC_T = 0.25;   // °/s and m/s² above which the phone counts as moving (logged per cycle for tuning)
+const motion = { avail: false, lastEv: 0, g: null, maxRot: 0, maxAcc: 0, movingUntil: 0, sawMove: false, rotDeg: 0, lastT: 0 };
+function onMotion(e) {
+  const now = performance.now(), r = e.rotationRate, a = e.acceleration, ag = e.accelerationIncludingGravity;
+  const hasR = r && r.alpha !== null && r.alpha !== undefined, hasA = a && a.x !== null && a.x !== undefined, hasG = ag && ag.x !== null && ag.x !== undefined;
+  if (!hasR && !hasA && !hasG) return;
+  const dt = motion.lastT ? Math.min(0.2, (now - motion.lastT) / 1000) : 0; motion.lastT = now;
+  motion.avail = true; motion.lastEv = now;
+  const rot = hasR ? Math.hypot(r.alpha, r.beta, r.gamma) : 0;
+  let acc = 0;
+  if (hasA) acc = Math.hypot(a.x, a.y, a.z);
+  else if (hasG) { // remove gravity with a slow running average (explicit approximation)
+    if (!motion.g) motion.g = [ag.x, ag.y, ag.z];
+    for (const [k, v] of [[0, ag.x], [1, ag.y], [2, ag.z]]) motion.g[k] += 0.02 * (v - motion.g[k]);
+    acc = Math.hypot(ag.x - motion.g[0], ag.y - motion.g[1], ag.z - motion.g[2]);
+  }
+  motion.maxRot = Math.max(motion.maxRot, rot); motion.maxAcc = Math.max(motion.maxAcc, acc);
+  if (rot > ROT_T || acc > ACC_T) { motion.movingUntil = now + 250; motion.sawMove = true; motion.rotDeg += rot * dt; }
+}
+window.addEventListener('devicemotion', onMotion);
+function motionQuery() {
+  const now = performance.now(), avail = motion.avail && now - motion.lastEv < 1000;
+  const out = { avail, moving: avail && (motion.sawMove || motion.movingUntil > now), rotMax: motion.maxRot, accMax: motion.maxAcc, rotDeg: motion.rotDeg };
+  if (!out.moving) motion.rotDeg = 0;
+  motion.maxRot = 0; motion.maxAcc = 0; motion.sawMove = false;
+  return out;
+}
+
 let audioEl = null, trackSettings = null, ctxInfo = null, ring = null, ringN = 0, ringEnd = 0, beepFrames = [];
 let log = [], lastRes = null, selDist = null, micPeak = 0, micPeakT = 0, drawPending = false;
 const wfOff = document.createElement('canvas');
@@ -708,6 +758,7 @@ $('startBtn').onclick = () => running ? stop() : start().catch(err => { $('warn'
 
 async function start() {
   const [f0, f1] = $('band').value.split(',').map(Number);
+  if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === 'function') { try { await DeviceMotionEvent.requestPermission(); } catch (e) { } }
   ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
   stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
   await ctx.resume();
@@ -733,6 +784,7 @@ async function start() {
   };
   eng.onNoise = () => setStatus();
   eng.onCycle = onCycle;
+  eng.motionQuery = motionQuery;
   node.port.onmessage = ev => {
     if (!running) return;
     const { frame, data } = ev.data;
@@ -767,7 +819,7 @@ function stop() {
 
 function onCycle(res) {
   lastRes = res;
-  log.push({ i: res.index, F: res.F, lat: res.latencyMs, micPeak: res.micPeak, micRms: res.micRms, t: res.t, len: res.len, listen: res.listenS, snr: res.snrDb, reason: res.reason,
+  log.push({ i: res.index, F: res.F, lat: res.latencyMs, mot: res.motion, micPeak: res.micPeak, micRms: res.micRms, t: res.t, len: res.len, listen: res.listenS, snr: res.snrDb, reason: res.reason,
     shift: !!res.shift, join: !!res.join, skipped: !!res.skipped,
     mov: res.analysis ? (res.analysis.moving || []).map(m => `${m.distCm.toFixed(1)}:${m.ppMm.toFixed(2)}:${m.periodS.toFixed(2)}:${(100 * m.conf).toFixed(0)}`).join(' ') : '', echoes: res.echoes || [], warn: res.warn.slice() });
   if (log.length > 50000) log.shift();
@@ -794,6 +846,9 @@ function showDiag() {
     `Audio: context ${ctxInfo.sampleRate} Hz, baseLatency ${ctxInfo.baseLatency !== undefined ? (1000 * ctxInfo.baseLatency).toFixed(1) + ' ms' : '?'}, outputLatency ${ctxInfo.outputLatency !== undefined ? (1000 * ctxInfo.outputLatency).toFixed(1) + ' ms' : '?'}, output route ${ctxInfo.route}`,
     `Last ${recent.length} cycles: beep heard in ${heard}; direct SNR median ${snrs.length ? snrs[snrs.length >> 1].toFixed(1) + ' dB' : '–'} (need ≥ 30 dB)`
   ];
+  lines.push(motion.avail && performance.now() - motion.lastEv < 1000
+    ? `Motion sensors: active – phone-move decisions use them (moving above ${ROT_T} °/s or ${ACC_T} m/s²; last cycle max ${recent.length && recent[recent.length - 1].mot ? recent[recent.length - 1].mot.rotMax.toFixed(2) + ' °/s, ' + recent[recent.length - 1].mot.accMax.toFixed(3) + ' m/s²' : '–'})`
+    : 'Motion sensors: not available – phone moves are judged from echoes only');
   lines.push(`Learned playback→mic delay: ${eng && eng.latMed !== null ? (eng.latMed / eng.fs * 1000).toFixed(2) + ' ms' : 'learning…'}`);
   if (recent.length) { const r = recent[recent.length - 1]; lines.push(`Mic during last cycle: peak ${dB(r.micPeak)} dBFS, rms ${dB(r.micRms)} dBFS`); }
   $('diag').textContent = lines.join('\n');
@@ -960,8 +1015,8 @@ $('csvBtn').onclick = () => {
   if (eng) L.push(`# band_hz ${eng.f0}-${eng.f1}; fs ${eng.fs}; c 343; max_range_m ${eng.maxRange}; gap_cm ${eng.gap * 100}; window_s ${eng.windowS}; range_res_cm ${(eng.rangeRes * 100).toFixed(2)}; wavelength_mm ${(eng.lambda * 1000).toFixed(3)}`);
   if (trackSettings) L.push('# mic_settings_applied ' + JSON.stringify(trackSettings).replace(/,/g, ';'));
   if (ctxInfo) L.push('# audio ' + JSON.stringify(ctxInfo).replace(/,/g, ';'));
-  L.push('cycle,beep_time_s,beep_frame,cycle_len_s,listen_s,end_reason,latency_ms,direct_snr_db,mic_peak_dbfs,mic_rms_dbfs,phone_moved(1=reset 2=joined),skipped,warnings,moving_shown(dist_cm:pp_mm:period_s:conf%),echoes(dist_cm:strength_db:fine_mm)');
-  for (const r of log) L.push([r.i, r.t.toFixed(5), r.F, r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.lat !== undefined ? r.lat.toFixed(3) : '', r.snr !== undefined ? r.snr.toFixed(1) : '', dB(r.micPeak), dB(r.micRms), r.shift ? 1 : r.join ? 2 : 0, r.skipped ? 1 : 0,
+  L.push('cycle,beep_time_s,beep_frame,cycle_len_s,listen_s,end_reason,latency_ms,direct_snr_db,mic_peak_dbfs,mic_rms_dbfs,motion_rot_max_dps,motion_acc_max_ms2,phone_moving_sensor,phone_moved(1=reset 2=joined),skipped,warnings,moving_shown(dist_cm:pp_mm:period_s:conf%),echoes(dist_cm:strength_db:fine_mm)');
+  for (const r of log) L.push([r.i, r.t.toFixed(5), r.F, r.len ? r.len.toFixed(5) : '', r.listen.toFixed(3), r.reason, r.lat !== undefined ? r.lat.toFixed(3) : '', r.snr !== undefined ? r.snr.toFixed(1) : '', dB(r.micPeak), dB(r.micRms), r.mot && r.mot.avail ? r.mot.rotMax.toFixed(2) : '', r.mot && r.mot.avail ? r.mot.accMax.toFixed(3) : '', r.mot && r.mot.avail ? (r.mot.moving ? 1 : 0) : '', r.shift ? 1 : r.join ? 2 : 0, r.skipped ? 1 : 0,
     '"' + r.warn.join('; ') + '"', r.mov || '', r.echoes.map(e => `${e.distCm.toFixed(2)}:${e.db.toFixed(1)}:${e.fineMm.toFixed(3)}`).join(' ')].join(','));
   const mv = eng ? eng.analysis.moving || [] : [];
   L.push(''); L.push('# moving echoes (at export)');
